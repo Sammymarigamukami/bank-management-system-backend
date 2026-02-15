@@ -1,6 +1,21 @@
 CREATE SCHEMA IF NOT EXISTS DBMS_BankApp;
 use DBMS_BankApp;
-drop table if exists PhysicalLoanInstallment,OnlineLoanInstallment,OnlineLoan,PhysicalLoan,Deposit,Withdrawal,Transaction,FDAccount,CashAccount,LoanType,CashAccountType,FDAccountType,OnlineCustomer,Customer,Employee,Branch;
+drop table if exists 
+PhysicalLoanInstallment,
+OnlineLoanInstallment,
+OnlineLoan,PhysicalLoan,
+Deposit,Withdrawal,
+Transaction,
+FDAccount,
+CashAccount,
+LoanType,
+CashAccountType,
+FDAccountType,
+OnlineCustomer,
+Customer,
+Employee,
+Branch;
+
 drop procedure if exists generate_physical_installments;
 drop procedure if exists generate_online_installments;
 drop procedure if exists withdrawals_procedure;
@@ -12,6 +27,8 @@ drop procedure if exists pay_onl_installment;
 drop trigger if exists gen_physical_installments_on_loan_approve;
 drop trigger if exists gen_online_installments_on_loan_approve;
 
+
+-- create tables
 CREATE Table Branch (
 	BranchID INT NOT NULL AUTO_INCREMENT,
     City varchar(20) NOT NULL,
@@ -49,9 +66,20 @@ CREATE TABLE OnlineCustomer
 (
 	OnlineID INT NOT NULL AUTO_INCREMENT,
     Username varchar(12) NOT NULL,
+    Email varchar(50) NOT NULL,
     CustomerID INT NOT NULL,
     Password varchar(100) NOT NULL,
+
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
     PRIMARY KEY (OnlineID) ,
+
+    UNIQUE KEY unique_username (Username),
+    UNIQUE KEY unique_email (Email),
+
+    INDEX idx_username (Username),
+    
     foreign key (CustomerID) 
         references Customer(CustomerID)
         on delete cascade
@@ -228,8 +256,43 @@ CREATE TABLE PhysicalLoanInstallment (
         on delete cascade
 );
 
+
 DELIMITER $$
-create procedure generate_physical_installments(IN LoanID int, IN installmentCount smallint ,IN approvedDate timestamp, IN loanAmount int)
+/*
+Procedure Name: generate_physical_installments
+
+Description:
+This stored procedure automatically generates installment records 
+for a physical loan after it has been approved.
+
+Parameters:
+- LoanID: The unique identifier of the loan.
+- installmentCount: Total number of installments to be generated.
+- approvedDate: The date when the loan was approved.
+- loanAmount: Total amount of the loan to be divided into installments.
+
+Logic:
+The procedure calculates the installment amount by dividing the 
+total loan amount equally by the number of installments. 
+It then generates installment records in the 
+PhysicalLoanInstallment table, where each installment deadline 
+is set one month apart starting from the approval date.
+
+Each generated record contains:
+- LoanID reference
+- Deadline date (incremented monthly)
+- Installment amount
+- Paid status (default set to FALSE)
+
+Purpose:
+To automate loan repayment schedule creation and reduce 
+manual data entry in the loan management system.
+*/
+create procedure generate_physical_installments(
+    IN LoanID int,
+    IN installmentCount smallint ,
+    IN approvedDate timestamp, 
+    IN loanAmount int)
 
 begin
 	declare i smallint;
@@ -241,14 +304,56 @@ begin
     set i = 1;
     while i <= installmentCount do
 		set installmentDate = timestampadd(MONTH, 1, installmentDate);
-    	insert into PhysicalLoanInstallment (LoanID, DeadlineDate, Amount, Paid) values (LoanID, installmentDate, installmentAmount, false);
+    	insert into PhysicalLoanInstallment (
+            LoanID, DeadlineDate, Amount, Paid
+            ) values (
+                LoanID, installmentDate, installmentAmount, false
+            );
         set i = i + 1;
     end while;
 end$$
 DELIMITER ;
 
+
 DELIMITER $$
-create procedure generate_online_installments(IN LoanID int, IN installmentCount smallint ,IN approvedDate timestamp, IN loanAmount int)
+/*
+Procedure: generate_online_installments
+
+Purpose:
+Automatically creates monthly repayment installments for an online loan
+and inserts them into the OnlineLoanInstallment table.
+
+Input Parameters:
+- LoanID: Unique identifier of the online loan.
+- installmentCount: Total number of installments to be generated.
+- approvedDate: Date and time the loan was created/approved.
+- loanAmount: Total approved loan amount.
+
+Process:
+1. The total loan amount is divided equally by the number of installments.
+2. The first repayment deadline is set one month after the approval date.
+3. Each subsequent installment deadline increases by one month.
+4. For each installment, a record is inserted containing:
+   - LoanID reference
+   - Monthly deadline date
+   - Equal installment amount
+   - Paid status initialized to FALSE
+
+Assumptions:
+- Online loans are automatically approved upon creation.
+- Loan amount is evenly divisible by the installment count.
+- No interest, penalties, or rounding adjustments are included.
+- Repayment begins exactly one month after approval.
+
+Outcome:
+Generates a structured monthly repayment schedule automatically
+to support online loan management.
+*/
+create procedure generate_online_installments(
+    IN LoanID int, 
+    IN installmentCount smallint ,
+    IN approvedDate timestamp, 
+    IN loanAmount int)
 begin
 	declare i smallint;
     declare installmentAmount int;
@@ -260,7 +365,9 @@ begin
 	set i = 1;
 	while i <= installmentCount do
 		set installmentDate = timestampadd(MONTH, 1, installmentDate);
-		insert into OnlineLoanInstallment (LoanID, DeadlineDate, Amount, Paid) values (LoanID, installmentDate, installmentAmount, false);
+		insert into OnlineLoanInstallment (
+            LoanID, DeadlineDate, Amount, Paid
+            ) values (LoanID, installmentDate, installmentAmount, false);
 		set i = i + 1;
 	end while;
 
@@ -268,6 +375,50 @@ end$$
 DELIMITER ;
 
 DELIMITER $$
+/*
+Trigger: gen_physical_installments_on_loan_approve
+
+Automatically generates repayment installments when a physical loan
+is officially approved.
+Trigger Event:
+AFTER UPDATE on PhysicalLoan table.
+
+Logic:
+- The trigger checks if the loan's Approved status changes
+  from FALSE to TRUE.
+- If so, it calls the stored procedure generate_physical_installments().
+- The procedure creates installment records based on:
+    - LoanID
+    - Loan Duration
+    - Loan Creation Date
+    - Loan Amount
+
+Reason:
+To ensure installment schedules are generated only once,
+and strictly at the moment of loan approval.
+
+Trigger: gen_online_installments_on_loan_approve
+
+Purpose:
+Automatically generates repayment installments when a new
+online loan record is created.
+
+Trigger Event:
+AFTER INSERT on OnlineLoan table.
+
+Logic:
+- Immediately calls generate_online_installments() after
+  a new online loan is inserted.
+- Uses:
+    - LoanID
+    - Loan Duration
+    - Loan Creation Date
+    - Loan Amount
+
+Reason:
+Online loans are assumed to be auto-approved upon insertion,
+so installment generation occurs instantly.
+*/
 create trigger gen_physical_installments_on_loan_approve
 	after update on PhysicalLoan for each row
 begin
@@ -278,6 +429,7 @@ end$$
 DELIMITER ;
 
 DELIMITER $$
+
 create trigger gen_online_installments_on_loan_approve
 	after insert on OnlineLoan for each row
 begin
@@ -286,7 +438,14 @@ end$$
 DELIMITER ;
 
 DELIMITER $$
-CREATE PROCEDURE create_onlineloan_procedure (IN customerID int, IN savingsAccountID int, IN amount int, IN duration int ,IN fDAccountID int,IN interestRate decimal(4,2), OUT code varchar(50))
+CREATE PROCEDURE create_onlineloan_procedure (
+    IN customerID int, 
+    IN savingsAccountID int, 
+    IN amount int, 
+    IN duration int ,
+    IN fDAccountID int,
+    IN interestRate decimal(4,2), 
+    OUT code varchar(50))
 BEGIN  	
 	DECLARE branchID int;
     DECLARE EXIT HANDLER FOR SQLEXCEPTION 

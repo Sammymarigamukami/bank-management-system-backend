@@ -1,9 +1,9 @@
 module.exports = (app) => {
-  const auth = require('../controllers/authController');
+  const auth = require('../controllers/authController.js');
 
   const router = require('express').Router();
 
-  router.post('/customer', auth.customerLogin);
+  router.post('/register/onlineAccount', auth.createOnlineCustomer);
 
   router.post('/employee', auth.employeeLogin);
 

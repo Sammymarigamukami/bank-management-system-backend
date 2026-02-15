@@ -1,5 +1,5 @@
-const onlineCustomers = require('../models/online.customer.model');
-const onlineEmployee = require('../models/employee.model');
+const onlineCustomers = require('../models/online.customer.model.js');
+const onlineEmployee = require('../models/employee.model.js');
 const jwt = require('jsonwebtoken');
 
 require('dotenv').config();
@@ -101,14 +101,36 @@ exports.employeeLogin = (req, res) => {
 };
 
 exports.createOnlineCustomer = (req, res) => {
-  // console.log(req.body);
-  const onlineCustomer = req.body.onlineCustomer;
+
+  if (!req.body) {
+    return res.status(400).json({
+      message: 'Online customer details are required',
+    })
+  }
+
+  console.log('creating online customer with details: ', req.body);
+  const onlineCustomer = req.body;
   onlineCustomers.create(onlineCustomer, (err, data) => {
-    if (err.kind === 'error')
-      res.status(500).send({
-        message:
-          err.message || 'Some error occurred while creating online customer.',
-      });
-    else res.send(data);
+    if (err) {
+      if (err.message === 'Username or email already exists') {
+        return res.status(409).json({ message: err.message });
+      }
+
+      if (
+        err.message === "Invalid username format" ||
+        err.message === "Invalid email format" ||
+        err.message.includes("Password must")
+      ) {
+        return res.status(400).json({ message: err.message });
+      }
+
+      if (err.message === "Customer does not exist") {
+        return res.status(404).json({ message: err.message });
+      }
+
+      return res.status(500).json({ message: 'Internal server error'});
+    };
+
+    return res.status(201).json(data);
   });
 };

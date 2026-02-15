@@ -6,32 +6,70 @@ const OnlineCustomer = function (onlineCustomer) {
   this.Password = onlineCustomer.password;
 };
 
-OnlineCustomer.create = (newOnlineCustomer, result) => {
+OnlineCustomer.create = async (newOnlineCustomer, result) => {
   const bcrypt = require('bcrypt');
-  const saltRounds = 10;
-  console.log('in create ', newOnlineCustomer);
-  const query = `INSERT INTO OnlineCustomer SET ?`;
-
-  bcrypt.hash(newOnlineCustomer.password, saltRounds, function(err, hash) {
-    // Store hash in your password DB.
-    if (err) {
-      console.log('error: ', err);
-      result({ kind: 'error', ...err }, null);
-      return;
+  const saltRounds = 10; // Number of salt rounds for bcrypt hashing
+  try {
+    if (!newOnlineCustomer.Username || !newOnlineCustomer.Email ||!newOnlineCustomer.Password) {
+      return result({ kind: 'validation_error', message: 'Missing required fields' }, null);
     }
-    newOnlineCustomer.password = hash;
-    sql.query(query, newOnlineCustomer, (err, res) => {
+    const username = newOnlineCustomer.Username.trim().toLowerCase();
+    const email = newOnlineCustomer.Email.trim().toLowerCase();
+    const password = newOnlineCustomer.Password;
+
+    // Validate Username
+    const usernameRegex = /^[a-zA-Z0-9_]{3,12}$/;
+    if (!usernameRegex.test(username)) {
+      return result({ kind: 'validation_error', message: 'Invalid username format' }, null);
+    }
+
+    // Validate Email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return result({ kind: 'validation_error', message: 'Invalid email format' }, null);
+    }
+
+    // strong password validation
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    if (!passwordRegex.test(password)) {
+      return result({ kind: 'validation_error', 
+        message: 'Password must be at least 8 characters long and include uppercase, lowercase, number, and special character' }, 
+        null);
+    }
+
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    const data = {
+      Username: username,
+      Email: email,
+      Password: hashedPassword,
+      CustomerID: newOnlineCustomer.CustomerID,
+    };
+
+    sql.query("INSERT INTO OnlineCustomer SET ?", data, (err, res) => {
       if (err) {
-        console.log('error: ', err);
-        result({ kind: 'error', ...err }, null);
-        return;
+        if (err.code === "ER_DUP_ENTRY") {
+          result({ kind: 'validation_error', message: 'Username or email already exists' }, null);
+        }
+
+        if (err.code === "ER_NO_REFERENCED_ROW_2") {
+          result({ kind: 'validation_error', message: 'Customer does not exist' }, null);
+        }
+
+        return result({ message: "Database error"} , null);
       }
-  
-      console.log('created online customer: ', { ...newOnlineCustomer });
-      result({ kind: 'success ' }, { ...newOnlineCustomer });
-    });
-});
-  
+      const responseData = {
+        OnlineID: res.insertId,
+        Username: username,
+        Email: email,
+        CustomerID: newOnlineCustomer.CustomerID,
+      };
+      result(null, responseData);
+    })
+
+  } catch (error) {
+    result({ kind: 'error', message: 'Error creating online customer' }, null);
+  }
 };
 
 OnlineCustomer.findByUsername = (username, result) => {
