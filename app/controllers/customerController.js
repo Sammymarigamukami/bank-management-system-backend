@@ -1,7 +1,7 @@
 const CustomerModel = require('../models/customer.model');
 
 exports.findAll = (req, res) => {
-  console.log(req.body);
+  console.log("findAll", req.user);
   const name = req.body.name;
   CustomerModel.getAll(name, req, (err, data) => {
     if (err)
@@ -26,7 +26,7 @@ exports.createCustomer = (req, res) => {
 };
 
 exports.getFromID = (req, res) => {
-  console.log(body);
+  console.log("getFromID", req.body);
   const id = req.body.id;
   CustomerModel.findById(id, req, (err, data) => {
     if (err)

@@ -121,27 +121,27 @@ VALUES
 
 INSERT INTO Employee(Name, Position, BranchID, isManager, OnlineID, Password)
 VALUES
-	("A.N.Cabral","L1-Employee",1,0,"cabral","$2b$10$q9H/eX.eoU2KTwJ.i54gjOf9AUFSP3KiCJJ08V0WSdEF8JsNd.5vC"),
-    ("Vasudewa","L1-Employee",2,0,"vasu","$2b$10$q9H/eX.eoU2KTwJ.i54gjOf9AUFSP3KiCJJ08V0WSdEF8JsNd.5vC"),
-    ("Mahinda R","L2-Employee",3,0,"MR","$2b$10$q9H/eX.eoU2KTwJ.i54gjOf9AUFSP3KiCJJ08V0WSdEF8JsNd.5vC"),
-    ("Basil","L1-Employee",1,0,"basil","$2b$10$q9H/eX.eoU2KTwJ.i54gjOf9AUFSP3KiCJJ08V0WSdEF8JsNd.5vC"),
-    ("Ranil W.","Manager",1,1,"ranil","$2b$10$q9H/eX.eoU2KTwJ.i54gjOf9AUFSP3KiCJJ08V0WSdEF8JsNd.5vC"),
-    ("Gotabaya R","Manager",2,1,"gota","$2b$10$q9H/eX.eoU2KTwJ.i54gjOf9AUFSP3KiCJJ08V0WSdEF8JsNd.5vC"),
-    ("Ravi K","Manager",3,1,"ravi","$2b$10$q9H/eX.eoU2KTwJ.i54gjOf9AUFSP3KiCJJ08V0WSdEF8JsNd.5vC");
+	("A.N.Cabral","L1-Employee",1,0,"cabral","$2b$10$YNyK9AKw/gLvUqDxhnD7Iun2Ys3x3CBeGT.qD2OT1ifuibN1h96ey"),
+    ("Vasudewa","L1-Employee",2,0,"vasu","$2b$10$YNyK9AKw/gLvUqDxhnD7Iun2Ys3x3CBeGT.qD2OT1ifuibN1h96ey"),
+    ("Mahinda R","L2-Employee",3,0,"MR","$2b$10$YNyK9AKw/gLvUqDxhnD7Iun2Ys3x3CBeGT.qD2OT1ifuibN1h96ey"),
+    ("Basil","L1-Employee",1,0,"basil","$2b$10$YNyK9AKw/gLvUqDxhnD7Iun2Ys3x3CBeGT.qD2OT1ifuibN1h96ey"),
+    ("Ranil W.","Manager",1,1,"ranil","$2b$10$YNyK9AKw/gLvUqDxhnD7Iun2Ys3x3CBeGT.qD2OT1ifuibN1h96ey"),
+    ("Gotabaya R","Manager",2,1,"gota","$2b$10$YNyK9AKw/gLvUqDxhnD7Iun2Ys3x3CBeGT.qD2OT1ifuibN1h96ey"),
+    ("Ravi K","Manager",3,1,"ravi","$2b$10$YNyK9AKw/gLvUqDxhnD7Iun2Ys3x3CBeGT.qD2OT1ifuibN1h96ey");
     
     
 INSERT INTO PhysicalLoan(CustomerID, BranchID, EmployeeID, Amount, Duration, InterestRate, SavingsAccountID)
 VALUES
-    (1, 1, 1, 100000, 6, 13.0, 1),
-    (2, 2, 2, 200000, 12, 14.5, 2),
-    (3, 3, 3, 300000, 36, 15.0, 3);
+    (1, 1, 8, 100000, 6, 13.0, 1),
+    (2, 2, 9, 200000, 12, 14.5, 2),
+    (3, 3, 10, 300000, 36, 15.0, 3);
 
-INSERT INTO OnlineCustomer(CustomerID, Username, Password)
+INSERT INTO OnlineCustomer(CustomerID, Username, Email, Password)
 VALUES
-    (1, 'AnjulaRox', '$2b$10$lQOrEvIUlVVQgcHFWsOJM.i8GWyqlTnOoT5POomjVCmh6YK0wzeyi'),
-    (2, 'UdaraMali', '$2b$10$lQOrEvIUlVVQgcHFWsOJM.i8GWyqlTnOoT5POomjVCmh6YK0wzeyi'),
-    (4, 'Inuka123', '$2b$10$lQOrEvIUlVVQgcHFWsOJM.i8GWyqlTnOoT5POomjVCmh6YK0wzeyi'),
-    (5, 'RadithSam', '$2b$10$lQOrEvIUlVVQgcHFWsOJM.i8GWyqlTnOoT5POomjVCmh6YK0wzeyi');
+    (8, 'AnjulaRox', 'anjula.rox@gmail.com', '$2b$10$YNyK9AKw/gLvUqDxhnD7Iun2Ys3x3CBeGT.qD2OT1ifuibN1h96ey'),
+    (9, 'UdaraMali', 'udara.mali@gmail.com', '$2b$10$YNyK9AKw/gLvUqDxhnD7Iun2Ys3x3CBeGT.qD2OT1ifuibN1h96ey'),
+    (10, 'Inuka123', 'inuka.123@gmail.com', '$2b$10$YNyK9AKw/gLvUqDxhnD7Iun2Ys3x3CBeGT.qD2OT1ifuibN1h96ey'),
+    (11, 'RadithSam', 'radith.sam@gmail.com', '$2b$10$YNyK9AKw/gLvUqDxhnD7Iun2Ys3x3CBeGT.qD2OT1ifuibN1h96ey');
     
 INSERT INTO Deposit(AccountID, Amount, Remark, DepositTime)
 VALUES

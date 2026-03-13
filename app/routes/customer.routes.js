@@ -6,10 +6,7 @@ module.exports = (app) => {
   router.post('/', [jwtauth], customers.findAll);
 
   router.get('/', [jwtauth], customers.getFromID);
-
   router.put('/:id', [jwtauth], customers.updateCustomer);
-
   router.post('/add', [jwtauth], customers.createCustomer);
-
   app.use('/customers', router);
 };

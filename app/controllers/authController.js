@@ -36,10 +36,12 @@ exports.customerLogin = (req, res) => {
             expiresIn: '2h',
           });
           const customerID = data.CustomerID;
+          const email = data.Email;
           res.send({
             auth: 'success',
             role: 'customer',
             expires: '2h',
+            email,
             customerID,
             userName,
             token,
@@ -54,6 +56,7 @@ exports.customerLogin = (req, res) => {
 
 exports.employeeLogin = (req, res) => {
   console.log('in auth controller');
+  console.log('req body: ', req.body.loginDetails);
   const userName = req.body.loginDetails.userName;
   const password = req.body.loginDetails.password;
   const bcrypt = require('bcrypt');
@@ -84,6 +87,7 @@ exports.employeeLogin = (req, res) => {
           });
           const employeeID = data.EmployeeID;
           const branchID = data.BranchID;
+
           res.send({
             auth: 'success',
             role: role,
@@ -92,6 +96,7 @@ exports.employeeLogin = (req, res) => {
             userName,
             token,
           });
+          console.log('login successful, token generated: ', token);
         } else {
           res.status(401).send({ auth: 'fail', message: 'Incorrect Password' });
         }
@@ -110,10 +115,15 @@ exports.createOnlineCustomer = (req, res) => {
 
   console.log('creating online customer with details: ', req.body);
   const onlineCustomer = req.body;
+  console.log("online customer details: ", onlineCustomer);
+
   onlineCustomers.create(onlineCustomer, (err, data) => {
     if (err) {
-      if (err.message === 'Username or email already exists') {
+      if (err.kind === 'username_or_email_exists') {
         return res.status(409).json({ message: err.message });
+      }
+      if (err.kind ===  'username_does_not_exist') {
+        return res.status(400).json({ message: err.message });
       }
 
       if (
@@ -129,8 +139,23 @@ exports.createOnlineCustomer = (req, res) => {
       }
 
       return res.status(500).json({ message: 'Internal server error'});
-    };
+    } else {
+      const customerID = data.customerID;
+      const userName = data.Username;
+      const email = data.Email;
+      const token = jwt.sign({ ...data, role: 'customer' }, JWT_SECRET, {
+        expiresIn: '2h',
+      });
 
-    return res.status(201).json(data);
+      res.send({
+        auth: 'success',
+        role: 'customer',
+        expires: '2h',
+        email,
+        customerID,
+        userName,
+        token
+      })
+    }
   });
 };

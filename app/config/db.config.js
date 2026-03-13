@@ -1,8 +1,8 @@
-require('dotenv').config();
+
 module.exports = {
-  HOST: process.env.DB_HOST,
-  USER: process.env.DB_USER,
-  PASSWORD: process.env.DB_PASSWORD,
-  DB: process.env.DB_SCHEMA,
+  host: "localhost",
+  user: "root",
+  password: "Sam@4892",
+  database: "DBMS_BankApp",
 };
 

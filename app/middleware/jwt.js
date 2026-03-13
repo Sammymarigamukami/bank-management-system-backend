@@ -4,12 +4,11 @@ const onlineEmployeeModel = require('../models/employee.model');
 // const _ = require("lodash");
 require('dotenv').config();
 
-const JWT_SECRET = process.env.JWT_SECRET;
 
 let verifyToken = (token, next) => {
   console.log({ token });
   try {
-    var decoded = jwt.verify(token, JWT_SECRET);
+    var decoded = jwt.verify(token, process.env.JWT_SECRET);
     return { ...decoded, expired: false };
   } catch (err) {
     if (err) {
@@ -26,11 +25,14 @@ let verifyToken = (token, next) => {
 };
 
 let tokenValidation = async (req, res, next) => {
+  console.log('req body: ', req.rawHeaders);
+  
   console.log('in token validation');
   const auth_header = req.headers['authorization'];
-  console.log({ auth_header });
+  console.log('auth header: ', auth_header);
   if (auth_header) {
     try {
+
       const token = auth_header.split(' ')[1];
       req.token = token;
       const decodedToken = verifyToken(req.token, next);
@@ -39,7 +41,7 @@ let tokenValidation = async (req, res, next) => {
       if (!decodedToken) {
         res.status(400).json({
           status: 400,
-          message: 'User does not have  token',
+          message: 'Invalid token',
         });
       } else {
         if (decodedToken.role === 'customer') {

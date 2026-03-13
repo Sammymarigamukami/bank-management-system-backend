@@ -7,9 +7,14 @@ const OnlineCustomer = function (onlineCustomer) {
 };
 
 OnlineCustomer.create = async (newOnlineCustomer, result) => {
+
   const bcrypt = require('bcrypt');
   const saltRounds = 10; // Number of salt rounds for bcrypt hashing
+
+  console.log('creating online customer: ', newOnlineCustomer);
+
   try {
+
     if (!newOnlineCustomer.Username || !newOnlineCustomer.Email ||!newOnlineCustomer.Password) {
       return result({ kind: 'validation_error', message: 'Missing required fields' }, null);
     }
@@ -17,22 +22,23 @@ OnlineCustomer.create = async (newOnlineCustomer, result) => {
     const email = newOnlineCustomer.Email.trim().toLowerCase();
     const password = newOnlineCustomer.Password;
 
+    console.log('creating online customer with username: ', username, ' email: ', email);
     // Validate Username
     const usernameRegex = /^[a-zA-Z0-9_]{3,12}$/;
     if (!usernameRegex.test(username)) {
-      return result({ kind: 'validation_error', message: 'Invalid username format' }, null);
+      return result({ kind: 'invalid_username', message: 'Invalid username format' }, null);
     }
 
     // Validate Email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      return result({ kind: 'validation_error', message: 'Invalid email format' }, null);
+      return result({ kind: 'invalid_email', message: 'Invalid email format' }, null);
     }
 
     // strong password validation
     const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
     if (!passwordRegex.test(password)) {
-      return result({ kind: 'validation_error', 
+      return result({ kind: 'invalid_password', 
         message: 'Password must be at least 8 characters long and include uppercase, lowercase, number, and special character' }, 
         null);
     }
@@ -43,27 +49,27 @@ OnlineCustomer.create = async (newOnlineCustomer, result) => {
       Username: username,
       Email: email,
       Password: hashedPassword,
-      CustomerID: newOnlineCustomer.CustomerID,
     };
 
     sql.query("INSERT INTO OnlineCustomer SET ?", data, (err, res) => {
       if (err) {
+        console.log('error: ', err);
         if (err.code === "ER_DUP_ENTRY") {
-          result({ kind: 'validation_error', message: 'Username or email already exists' }, null);
+        return result({ kind: 'username_or_email_exists', message: 'Username or email already exists' }, null);
         }
 
         if (err.code === "ER_NO_REFERENCED_ROW_2") {
-          result({ kind: 'validation_error', message: 'Customer does not exist' }, null);
+          return result({ kind: 'username_does_not_exist', message: 'Customer does not exist' }, null);
         }
 
-        return result({ message: "Database error"} , null);
+       return result({ message: "Database error"} , null);
       }
       const responseData = {
-        OnlineID: res.insertId,
+        customerID: res.insertId,
         Username: username,
         Email: email,
-        CustomerID: newOnlineCustomer.CustomerID,
       };
+      console.log('created online customer: ', responseData);
       result(null, responseData);
     })
 

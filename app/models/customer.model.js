@@ -34,6 +34,7 @@ Customer.getAll = (name, req, result) => {
 };
 
 Customer.findById = (id, req, result) => {
+  console.log("finding by ID", req);
   if (req.user.role === 'customer') {
     console.log('no access cust findbyid');
     result({ kind: 'access denied' }, null);

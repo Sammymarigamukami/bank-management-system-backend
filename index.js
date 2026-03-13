@@ -1,5 +1,8 @@
 const express = require('express');
 const cors = require('cors');
+const dotenv = require('dotenv');
+dotenv.config();
+
 
 const app = express();
 const PORT = 8000;
@@ -7,10 +10,10 @@ const PORT = 8000;
 app.use(express.json());
 app.use(
   cors({
-    origin: ['http://127.0.0.1:3000', 'http://localhost:3000'],
+    origin: ['http://127.0.0.1:3000', 'http://localhost:5173' , 'http://localhost:3000'],
   })
 );
-
+console.log('env secret: ', process.env.JWT_SECRET);
 require('./app/routes/customer.routes')(app);
 require('./app/routes/fd.routes')(app);
 require('./app/routes/account.routes')(app);

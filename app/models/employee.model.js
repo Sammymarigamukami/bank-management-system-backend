@@ -53,13 +53,13 @@ Employee.findById = (id, result) => {
   });
 };
 
-Employee.findByUsername = (userName, result) => {
+Employee.findByUsername = (username, result) => {
   console.log('in employee model');
-  console.log(userName);
+  console.log(username);
 
   sql.query(
     'SELECT * FROM Employee WHERE OnlineID = ?',
-    userName,
+    username,
     (err, res) => {
       if (err) {
         console.log('error: ', err);
