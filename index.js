@@ -10,7 +10,7 @@ const PORT = 8000;
 app.use(express.json());
 app.use(
   cors({
-    origin: ['http://127.0.0.1:3000', 'http://localhost:5173' , 'http://localhost:3000'],
+    origin: ['http://localhost:5173'],
   })
 );
 console.log('env secret: ', process.env.JWT_SECRET);
@@ -25,6 +25,7 @@ require('./app/routes/withdrawal.routes')(app);
 require('./app/routes/deposit.routes')(app);
 require('./app/routes/onlineCustomer.routes')(app);
 require('./app/routes/employee.routes')(app);
+require('./app/routes/userAccountRoutes')(app);
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}.`);

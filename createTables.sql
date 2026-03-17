@@ -65,33 +65,19 @@ CREATE Table Customer (
 
 CREATE TABLE OnlineCustomer (
     CustomerID INT NOT NULL AUTO_INCREMENT,
+    FirstName VARCHAR(20) NOT NULL,
+    LastName VARCHAR(20) NOT NULL,
     Username VARCHAR(12) NOT NULL,
     Email VARCHAR(50) NOT NULL,
+    phone VARCHAR(20) UNIQUE NOT NULL,
     Password VARCHAR(100) NOT NULL,
+    Status ENUM('active', 'suspended', 'closed') DEFAULT 'active',
     CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (CustomerID),
     UNIQUE KEY unique_username (Username),
     UNIQUE KEY unique_email (Email),
     INDEX idx_username (Username)
-);
-
-CREATE TABLE RefreshToken (
-    TokenID INT NOT NULL AUTO_INCREMENT,
-    CustomerID INT NOT NULL,
-    Token VARCHAR(500) NOT NULL,
-    ExpiresAt DATETIME NOT NULL,
-    IsRevoked BOOLEAN DEFAULT FALSE,
-    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    PRIMARY KEY (TokenID),
-
-    FOREIGN KEY (CustomerID)
-        REFERENCES OnlineCustomer(CustomerID)
-        ON DELETE CASCADE,
-
-    INDEX idx_customer (CustomerID),
-    INDEX idx_token (Token)
 );
 
 CREATE TABLE FDAccountType

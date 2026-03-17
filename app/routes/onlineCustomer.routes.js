@@ -9,6 +9,6 @@ module.exports = (app) => {
     [jwtauth, isEmployee],
     onlineCustomer.createOnlineCustomer
   );
-
+  
   app.use('/onlineCustomer', router);
 };

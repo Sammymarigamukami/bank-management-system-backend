@@ -34,6 +34,7 @@ let tokenValidation = async (req, res, next) => {
     try {
 
       const token = auth_header.split(' ')[1];
+
       req.token = token;
       const decodedToken = verifyToken(req.token, next);
       console.log({ decodedToken });
@@ -50,9 +51,9 @@ let tokenValidation = async (req, res, next) => {
 
           if (decodedToken.expired) {
             let decoded = jwt.decode(token);
-            //console.log(decoded.Username);
+            console.log("username from decoded",decoded.username);
             const user = onlineCustomerModel.findByUsername(
-              decoded.Username,
+              decoded.username,
               (err, res) => {
                 console.log('Result:');
                 // console.log(res);
@@ -74,11 +75,12 @@ let tokenValidation = async (req, res, next) => {
             let decoded = jwt.decode(token);
             console.log('not expired');
 
-            onlineCustomerModel.findByUsername(decoded.Username, (err, res) => {
+            onlineCustomerModel.findByUsername(decoded.username, (err, res) => {
               if (err) {
                 console.log({ err });
               }
               let user = res;
+              console.log("user from db", user);
               user.token = token;
               user.role = decoded.role;
               req.user = user;

@@ -23,7 +23,7 @@ exports.customerLogin = (req, res) => {
         message: 'Error retrieving user',
       });
     } else {
-      hash = data.Password;
+      hash = data.password_hash;
       bcrypt.compare(password, hash, function (err, result) {
         // result == true
         if (err === 'error') {
@@ -35,8 +35,14 @@ exports.customerLogin = (req, res) => {
           const token = jwt.sign({ ...data, role: 'customer' }, JWT_SECRET, {
             expiresIn: '2h',
           });
-          const customerID = data.CustomerID;
-          const email = data.Email;
+          const customerID = data.customer_id;
+          const email = data.email;
+          console.log("response data after login req:", {
+             customerID,
+              email, 
+              userName,
+              token
+             });
           res.send({
             auth: 'success',
             role: 'customer',
@@ -143,6 +149,9 @@ exports.createOnlineCustomer = (req, res) => {
       const customerID = data.customerID;
       const userName = data.Username;
       const email = data.Email;
+      const phone = data.Phone;
+      const firstName = data.FirstName;
+      const lastName = data.LastName;
       const token = jwt.sign({ ...data, role: 'customer' }, JWT_SECRET, {
         expiresIn: '2h',
       });
@@ -154,7 +163,10 @@ exports.createOnlineCustomer = (req, res) => {
         email,
         customerID,
         userName,
-        token
+        phone,
+        firstName,
+        lastName,
+        token,
       })
     }
   });

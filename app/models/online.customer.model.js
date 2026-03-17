@@ -1,3 +1,4 @@
+const { normalizeMsisdn } = require('../utils/phoneNormalize.js');
 const sql = require('./db.js');
 
 const OnlineCustomer = function (onlineCustomer) {
@@ -15,12 +16,23 @@ OnlineCustomer.create = async (newOnlineCustomer, result) => {
 
   try {
 
-    if (!newOnlineCustomer.Username || !newOnlineCustomer.Email ||!newOnlineCustomer.Password) {
+    if (
+      !newOnlineCustomer.Username || 
+      !newOnlineCustomer.Email ||
+      !newOnlineCustomer.Password || 
+      !newOnlineCustomer.Phone || 
+      !newOnlineCustomer.FirstName || 
+      !newOnlineCustomer.LastName
+    ) {
       return result({ kind: 'validation_error', message: 'Missing required fields' }, null);
     }
     const username = newOnlineCustomer.Username.trim().toLowerCase();
     const email = newOnlineCustomer.Email.trim().toLowerCase();
     const password = newOnlineCustomer.Password;
+    const phone = normalizeMsisdn(newOnlineCustomer.Phone);
+    const firstName = newOnlineCustomer.FirstName.trim();
+    const lastName = newOnlineCustomer.LastName.trim();
+
 
     console.log('creating online customer with username: ', username, ' email: ', email);
     // Validate Username
@@ -46,12 +58,15 @@ OnlineCustomer.create = async (newOnlineCustomer, result) => {
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
     const data = {
-      Username: username,
-      Email: email,
-      Password: hashedPassword,
+      username: username,
+      email: email,
+      password_hash: hashedPassword,
+      phone: phone,
+      first_name: firstName,
+      last_name: lastName
     };
 
-    sql.query("INSERT INTO OnlineCustomer SET ?", data, (err, res) => {
+    sql.query("INSERT INTO customers SET ?", data, (err, res) => {
       if (err) {
         console.log('error: ', err);
         if (err.code === "ER_DUP_ENTRY") {
@@ -68,6 +83,9 @@ OnlineCustomer.create = async (newOnlineCustomer, result) => {
         customerID: res.insertId,
         Username: username,
         Email: email,
+        Phone: phone,
+        FirstName: firstName,
+        LastName: lastName
       };
       console.log('created online customer: ', responseData);
       result(null, responseData);
@@ -78,11 +96,12 @@ OnlineCustomer.create = async (newOnlineCustomer, result) => {
   }
 };
 
-OnlineCustomer.findByUsername = (username, result) => {
+OnlineCustomer.findByUsername = (userName, result) => {
   console.log('in findUser');
-  const query = `SELECT * FROM OnlineCustomer WHERE Username = ?`;
-
-  sql.query(query, username, (err, res) => {
+  console.log("username:", userName);
+  const query = `SELECT * FROM customers WHERE username = ?`;
+  sql.query(query, userName, (err, res) => {
+    console.log("query result: ", res);
     if (err) {
       console.log('error: ', err);
       result({ kind: 'error', ...err }, null);
@@ -100,7 +119,7 @@ OnlineCustomer.findByUsername = (username, result) => {
 };
 
 OnlineCustomer.delete = (id, result) => {
-  const query = `DELETE FROM OnlineCustomer WHERE CustomerID = ?`;
+  const query = `DELETE FROM customers WHERE customer_id = ?`;
   sql.query(query, id, (err, res) => {
     if (err) {
       console.log('error: ', err);
