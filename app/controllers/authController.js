@@ -11,52 +11,55 @@ exports.customerLogin = (req, res) => {
   const password = req.body.loginDetails.password;
   const bcrypt = require('bcrypt');
 
-  onlineCustomers.findByUsername(userName, (err, data) => {
-    if (err.kind === 'not_found') {
-      res.status(404).send({
-        auth: 'fail',
-        message: 'User not found',
-      });
-    } else if (err.kind === 'error') {
-      res.status(500).send({
+onlineCustomers.findByUsername(userName, (err, data) => {
+
+    if (err) {
+      if (err.kind === 'not_found') {
+        return res.status(404).send({
+          auth: 'fail',
+          message: 'User not found',
+        });
+      }
+      return res.status(500).send({
         auth: 'fail',
         message: 'Error retrieving user',
       });
-    } else {
-      hash = data.password_hash;
-      bcrypt.compare(password, hash, function (err, result) {
-        // result == true
-        if (err === 'error') {
-          res.status(500).send({
-            auth: 'fail',
-            message: 'Error retrieving user',
-          });
-        } else if (result === true) {
-          const token = jwt.sign({ ...data, role: 'customer' }, JWT_SECRET, {
-            expiresIn: '2h',
-          });
-          const customerID = data.customer_id;
-          const email = data.email;
-          console.log("response data after login req:", {
-             customerID,
-              email, 
-              userName,
-              token
-             });
-          res.send({
-            auth: 'success',
-            role: 'customer',
-            expires: '2h',
-            email,
-            customerID,
-            userName,
-            token,
-          });
-        } else {
-          res.status(401).send({ auth: 'fail', message: 'Incorrect Password' });
-        }
-      });
     }
+
+    const hash = data.password_hash;
+
+    bcrypt.compare(password, hash, (err, result) => {
+
+      if (err) {
+        return res.status(500).send({
+          auth: 'fail',
+          message: 'Error comparing password',
+        });
+      }
+
+      if (!result) {
+        return res.status(401).send({
+          auth: 'fail',
+          message: 'Incorrect Password',
+        });
+      }
+
+      const token = jwt.sign(
+        { customerID: data.customer_id, role: 'customer' }, // 🔥 FIXED
+        JWT_SECRET,
+        { expiresIn: '2h' }
+      );
+
+      return res.send({
+        auth: 'success',
+        role: 'customer',
+        expires: '2h',
+        email: data.email,
+        customerID: data.customer_id,
+        userName,
+        token,
+      });
+    });
   });
 };
 

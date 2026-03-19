@@ -1,4 +1,6 @@
+const generateAccountNumber = require('../utils/accountNumberGenerator.js');
 const { normalizeMsisdn } = require('../utils/phoneNormalize.js');
+const AccountModel = require('./userAccountModel.js');
 const sql = require('./db.js');
 
 const OnlineCustomer = function (onlineCustomer) {
@@ -72,15 +74,11 @@ OnlineCustomer.create = async (newOnlineCustomer, result) => {
         if (err.code === "ER_DUP_ENTRY") {
         return result({ kind: 'username_or_email_exists', message: 'Username or email already exists' }, null);
         }
-
-        if (err.code === "ER_NO_REFERENCED_ROW_2") {
-          return result({ kind: 'username_does_not_exist', message: 'Customer does not exist' }, null);
-        }
-
        return result({ message: "Database error"} , null);
       }
+      const customerID = res.insertId;
       const responseData = {
-        customerID: res.insertId,
+        customerID,
         Username: username,
         Email: email,
         Phone: phone,
@@ -88,19 +86,46 @@ OnlineCustomer.create = async (newOnlineCustomer, result) => {
         LastName: lastName
       };
       console.log('created online customer: ', responseData);
-      result(null, responseData);
-    })
 
+      // create current account for new user
+      const accountNumber = generateAccountNumber();
+      const accountData = {
+        customer_id: customerID,
+        account_number: accountNumber,
+        account_type: 'current',
+        status: 'not_active',
+      }
+
+      sql.query("INSERT INTO accounts SET ?", accountData, (err, res2) => {
+        if (err) {
+          console.log('error creating account for customers: ', err);
+          return result({ message: 'Error creating account for customer' }, null);
+        }
+
+        // Activate account immediately after creation
+        AccountModel.updateAccountStatus(res2.insertId, 'active', (err, res3)=> {
+          if (err) {
+            console.log('error activating account for customer: ', err);
+            return result({ message: 'Error activating account for new customer'}, null);
+          }
+          console.log('account created and activated for new customer with ID: ', accountNumber);
+        result(null, {
+           ...responseData,
+           accountData 
+        })
+      })
+      });
+    })
   } catch (error) {
     result({ kind: 'error', message: 'Error creating online customer' }, null);
   }
 };
 
-OnlineCustomer.findByUsername = (userName, result) => {
+OnlineCustomer.findByUsername = (username, result) => {
   console.log('in findUser');
-  console.log("username:", userName);
+  console.log("username:", username);
   const query = `SELECT * FROM customers WHERE username = ?`;
-  sql.query(query, userName, (err, res) => {
+  sql.query(query, username, (err, res) => {
     console.log("query result: ", res);
     if (err) {
       console.log('error: ', err);
