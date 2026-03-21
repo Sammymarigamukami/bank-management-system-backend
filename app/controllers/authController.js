@@ -12,6 +12,8 @@ exports.customerLogin = (req, res) => {
   const bcrypt = require('bcrypt');
 
 onlineCustomers.findByUsername(userName, (err, data) => {
+  console.log("findByUsername result: ", data);
+  console.log("findByUsername error: ", err);
 
     if (err) {
       if (err.kind === 'not_found') {
@@ -20,15 +22,12 @@ onlineCustomers.findByUsername(userName, (err, data) => {
           message: 'User not found',
         });
       }
-      return res.status(500).send({
-        auth: 'fail',
-        message: 'Error retrieving user',
-      });
     }
-
     const hash = data.password_hash;
+    console.log('comparing password with hash: ', hash);
 
     bcrypt.compare(password, hash, (err, result) => {
+      console.log('bcrypt.compare result: ', result);
 
       if (err) {
         return res.status(500).send({
@@ -43,12 +42,13 @@ onlineCustomers.findByUsername(userName, (err, data) => {
           message: 'Incorrect Password',
         });
       }
-
+      console.log('password correct, generating token for user: ', userName);
       const token = jwt.sign(
-        { customerID: data.customer_id, role: 'customer' }, // 🔥 FIXED
+        { customerID: data.customer_id, role: 'customer' }, 
         JWT_SECRET,
         { expiresIn: '2h' }
       );
+      console.log('login successful, token generated: ', token);
 
       return res.send({
         auth: 'success',

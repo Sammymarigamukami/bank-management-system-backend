@@ -143,6 +143,30 @@ OnlineCustomer.findByUsername = (username, result) => {
   });
 };
 
+OnlineCustomer.findById = (customer_id, result) => {
+  console.log("in findById");
+  console.log("customer_id:", customer_id);
+
+  const query = `SELECT * FROM customers WHERE customer_id = ?`;
+
+  // IMPORTANT: wrap param in array
+  sql.query(query, [customer_id], (err, res) => {
+    console.log("query result:", res);
+
+    if (err) {
+      console.log("error:", err);
+      return result({ kind: "error", ...err }, null);
+    }
+
+    if (res.length) {
+      console.log("found customer:", res[0]);
+      return result({ kind: "success" }, res[0]);
+    } else {
+      return result({ kind: "not_found" }, null);
+    }
+  });
+};
+
 OnlineCustomer.delete = (id, result) => {
   const query = `DELETE FROM customers WHERE customer_id = ?`;
   sql.query(query, id, (err, res) => {

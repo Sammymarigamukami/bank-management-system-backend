@@ -52,8 +52,8 @@ let tokenValidation = async (req, res, next) => {
           if (decodedToken.expired) {
             let decoded = jwt.decode(token);
             console.log("username from decoded",decodedToken.Username);
-            const user = onlineCustomerModel.findByUsername(
-              decoded.username,
+            const user = onlineCustomerModel.findById(
+              decoded.customerID,
               (err, res) => {
                 console.log('Result:');
                 // console.log(res);
@@ -75,7 +75,7 @@ let tokenValidation = async (req, res, next) => {
             let decoded = jwt.decode(token);
             console.log('not expired');
 
-            onlineCustomerModel.findByUsername(decodedToken.Username, (err, res) => {
+            onlineCustomerModel.findById(decodedToken.customerID, (err, res) => {
               if (err) {
                 console.log({ err });
               }
