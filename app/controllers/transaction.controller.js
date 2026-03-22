@@ -142,3 +142,15 @@ exports.getBranchOutCount = (req, res) => {
     } else res.send(data);
   });
 };
+
+exports.getAllTransactions = (req, res) => {
+  const customerID = req.user.customer_id;
+  TransactionModel.getAllTransactions(customerID, (err, data) => {
+    if (err.kind === 'error') {
+      res.status(500).send({
+        message:
+          err.message || 'Some error occurred while retrieving transactions.',
+      });
+    } else res.send(data);
+  });
+}

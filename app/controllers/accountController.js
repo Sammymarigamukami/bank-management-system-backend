@@ -1,4 +1,6 @@
+const { isAccountOwnedByCustomer } = require('../middleware/middleware.js');
 const AccountModel = require('../models/account.model');
+const GetBalance = require('../models/userAccountModel.js');
 
 // Retrieve all accounts for a customer or all accounts
 exports.findAll = (req, res) => {
@@ -54,4 +56,35 @@ exports.create = (req, res) => {
       });
     } else res.send(data);
   });
+};
+
+
+exports.getActiveAccounts = async (req, res) => {
+  const customerID = req.user.customer_id;
+  console.log("customerID:", customerID);
+
+  try {
+    // Wrap the callback-based function in a Promise
+    const accounts = await new Promise((resolve, reject) => {
+      GetBalance.getActiveAccounts(customerID, (err, data) => {
+        if (err) return reject(err);       // reject the promise on error
+        resolve(data);                     // resolve the promise with data
+      });
+    });
+
+    if (!accounts || accounts.length === 0) {
+      return res.status(404).send({
+        message: `No active accounts found for customer ${customerID}`
+      });
+    }
+
+    return res.status(200).send({
+      accounts
+    });
+
+  } catch (err) {
+    return res.status(500).send({
+      message: err.message || "Database error"
+    });
+  }
 };

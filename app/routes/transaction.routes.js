@@ -37,7 +37,10 @@ module.exports = (app) => {
     transactions.getBranchOutCount
   );
 
+  router.get('/customer', [jwtauth], transactions.getAllTransactions);
+
   router.get('/', [jwtauth, isEmployee], transactions.findAll);
 
   app.use('/transactions', router);
 };
+  

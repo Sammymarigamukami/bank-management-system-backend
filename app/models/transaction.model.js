@@ -196,4 +196,41 @@ Transaction.getBranchOutCount = (branchID, result) => {
   });
 };
 
+Transaction.getAllTransactions = (customerID, result) => {
+      const query = `
+        SELECT 
+          t.created_at AS date,
+          t.description AS description,
+          t.transaction_type AS transaction_type,
+          t.amount AS amount,
+          'completed' AS status
+        FROM transactions t
+        JOIN accounts a ON t.account_id = a.account_id
+        WHERE a.customer_id = ?
+
+        UNION ALL
+
+        SELECT 
+          m.created_at AS date,
+          COALESCE(m.reference_code, 'M-Pesa Transaction') AS description,
+          'mpesa' AS transaction_type,
+          m.amount AS amount,
+          m.status AS status
+        FROM mpesa_transactions m
+        JOIN accounts a ON m.account_id = a.account_id
+        WHERE a.customer_id = ?
+
+        ORDER BY date DESC
+      `; 
+      sql.query(query, [customerID, customerID], (err, res) => {
+        if (err) {
+          console.log('error: ', err);
+          return result({ kind: 'error' }, null);
+        }
+        console.log('found transactions: ', res);
+        return result({ kind: 'success' }, res);
+      })
+}
+
 module.exports = Transaction;
+

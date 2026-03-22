@@ -20,6 +20,7 @@ class AccountModel {
 
   static deposit(accountId, amount, callback) {
     const sql = `
+
       UPDATE accounts 
       SET balance = balance + ? 
       WHERE account_id = ? AND status = 'active'
@@ -184,6 +185,41 @@ class AccountModel {
     });
   });
 }
+
+
+static getActiveAccounts(customerID, callback) {
+
+  const query = `
+    SELECT 
+      account_id,
+      account_number,
+      account_type,
+      currency,
+      balance,
+      status
+    FROM accounts
+    WHERE customer_id = ?
+      AND account_type = 'current'
+  `;
+
+  db.query(query, [customerID], (err, res) => {
+    if (err) {
+      console.error("DB error (getActiveAccounts):", err);
+      return callback(err, null);
+    }
+
+    const accounts = (res || []).map(acc => ({
+      id: acc.account_id,
+      number: acc.account_number,
+      type: acc.account_type,
+      currency: acc.currency,
+      balance: acc.balance ? Number(acc.balance) : 0,
+      status: acc.status
+    }));
+
+    return callback(null, accounts);
+  });
+ }
 }
 
 module.exports = AccountModel;

@@ -13,5 +13,5 @@ module.exports = (app) => {
 
   router.post('/create', [jwtauth], accounts.create);
 
-  app.use('/accounts', [jwtauth], router);
+  app.use('/accounts', router);
 };
