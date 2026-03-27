@@ -58,7 +58,7 @@ Employee.findByUsername = (username, result) => {
   console.log(username);
 
   sql.query(
-    'SELECT * FROM Employee WHERE OnlineID = ?',
+    'SELECT * FROM employee_auth WHERE username = ?',
     username,
     (err, res) => {
       if (err) {

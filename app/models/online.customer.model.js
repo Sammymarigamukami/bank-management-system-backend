@@ -2,6 +2,8 @@ const generateAccountNumber = require('../utils/accountNumberGenerator.js');
 const { normalizeMsisdn } = require('../utils/phoneNormalize.js');
 const AccountModel = require('./userAccountModel.js');
 const sql = require('./db.js');
+const RoleModel = require('./roleModel.js');
+const CustomerRoleModel = require('./customerRoleModel.js');
 
 const OnlineCustomer = function (onlineCustomer) {
   this.CustomerID = onlineCustomer.customerID;
@@ -10,24 +12,21 @@ const OnlineCustomer = function (onlineCustomer) {
 };
 
 OnlineCustomer.create = async (newOnlineCustomer, result) => {
-
   const bcrypt = require('bcrypt');
-  const saltRounds = 10; // Number of salt rounds for bcrypt hashing
-
-  console.log('creating online customer: ', newOnlineCustomer);
+  const saltRounds = 10;
 
   try {
-
     if (
-      !newOnlineCustomer.Username || 
+      !newOnlineCustomer.Username ||
       !newOnlineCustomer.Email ||
-      !newOnlineCustomer.Password || 
-      !newOnlineCustomer.Phone || 
-      !newOnlineCustomer.FirstName || 
+      !newOnlineCustomer.Password ||
+      !newOnlineCustomer.Phone ||
+      !newOnlineCustomer.FirstName ||
       !newOnlineCustomer.LastName
     ) {
       return result({ kind: 'validation_error', message: 'Missing required fields' }, null);
     }
+
     const username = newOnlineCustomer.Username.trim().toLowerCase();
     const email = newOnlineCustomer.Email.trim().toLowerCase();
     const password = newOnlineCustomer.Password;
@@ -35,89 +34,94 @@ OnlineCustomer.create = async (newOnlineCustomer, result) => {
     const firstName = newOnlineCustomer.FirstName.trim();
     const lastName = newOnlineCustomer.LastName.trim();
 
-
-    console.log('creating online customer with username: ', username, ' email: ', email);
-    // Validate Username
     const usernameRegex = /^[a-zA-Z0-9_]{3,12}$/;
     if (!usernameRegex.test(username)) {
       return result({ kind: 'invalid_username', message: 'Invalid username format' }, null);
     }
 
-    // Validate Email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       return result({ kind: 'invalid_email', message: 'Invalid email format' }, null);
     }
 
-    // strong password validation
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$/;
     if (!passwordRegex.test(password)) {
-      return result({ kind: 'invalid_password', 
-        message: 'Password must be at least 8 characters long and include uppercase, lowercase, number, and special character' }, 
-        null);
+      return result({
+        kind: 'invalid_password',
+        message: 'Weak password'
+      }, null);
     }
 
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-    const data = {
-      username: username,
-      email: email,
+    const customerData = {
+      username,
+      email,
       password_hash: hashedPassword,
-      phone: phone,
+      phone,
       first_name: firstName,
       last_name: lastName
     };
 
-    sql.query("INSERT INTO customers SET ?", data, (err, res) => {
+    sql.query("INSERT INTO customers SET ?", customerData, (err, res1) => {
       if (err) {
-        console.log('error: ', err);
         if (err.code === "ER_DUP_ENTRY") {
-        return result({ kind: 'username_or_email_exists', message: 'Username or email already exists' }, null);
+          return result({ kind: 'duplicate', message: 'Username or email exists' }, null);
         }
-       return result({ message: "Database error"} , null);
+        return result({ kind: 'error', message: 'Customer creation failed' }, null);
       }
-      const customerID = res.insertId;
-      const responseData = {
-        customerID,
-        Username: username,
-        Email: email,
-        Phone: phone,
-        FirstName: firstName,
-        LastName: lastName
-      };
-      console.log('created online customer: ', responseData);
 
-      // create current account for new user
+      const customerID = res1.insertId;
+
       const accountNumber = generateAccountNumber();
+
       const accountData = {
         customer_id: customerID,
         account_number: accountNumber,
         account_type: 'current',
-        status: 'not_active',
-      }
+        status: 'not_active'
+      };
 
       sql.query("INSERT INTO accounts SET ?", accountData, (err, res2) => {
         if (err) {
-          console.log('error creating account for customers: ', err);
-          return result({ message: 'Error creating account for customer' }, null);
+          return result({ kind: 'error', message: 'Account creation failed' }, null);
         }
 
-        // Activate account immediately after creation
-        AccountModel.updateAccountStatus(res2.insertId, 'active', (err, res3)=> {
+        AccountModel.updateAccountStatus(res2.insertId, 'active', (err) => {
           if (err) {
-            console.log('error activating account for customer: ', err);
-            return result({ message: 'Error activating account for new customer'}, null);
+            return result({ kind: 'error', message: 'Account activation failed' }, null);
           }
-          console.log('account created and activated for new customer with ID: ', accountNumber);
-        result(null, {
-           ...responseData,
-           accountData 
-        })
-      })
+
+          RoleModel.findByName('customer', (err, role) => {
+            if (err || !role) {
+              return result({ kind: 'error', message: 'Customer role not found' }, null);
+            }
+
+            CustomerRoleModel.assignRole(customerID, role.role_id, null, (err) => {
+              if (err) {
+                return result({ kind: 'error', message: 'Role assignment failed' }, null);
+              }
+
+              return result(null, {
+                kind: 'success',
+                message: 'Customer created successfully',
+                customerID,
+                username,
+                email,
+                phone,
+                firstName,
+                lastName,
+                accountNumber,
+                role: role.role_name
+              });
+            });
+          });
+        });
       });
-    })
+    });
+
   } catch (error) {
-    result({ kind: 'error', message: 'Error creating online customer' }, null);
+    return result({ kind: 'error', message: 'Server error' }, null);
   }
 };
 
