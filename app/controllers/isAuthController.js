@@ -1,5 +1,7 @@
 
 const userAuth = async (req, res) => {
+  console.log("Checking user authentication...");
+  console.log("User info from token:", req.user);
   try {
 
     if (!req.user) {
@@ -12,9 +14,9 @@ const userAuth = async (req, res) => {
     res.status(200).json({
       success: true,
       user: {
-        id: req.user.customer_id,
-        username: req.user.username,
-        email: req.user.email,
+        id: req.user.customer_id || req.user.employee_id,
+        username: req.user.username|| req.user.user_name,
+        email: req.user.email || null,
         role: req.user.role
       }
     });

@@ -25,124 +25,68 @@ let verifyToken = (token, next) => {
 };
 
 let tokenValidation = async (req, res, next) => {
-  console.log('req body: ', req.rawHeaders);
-  
-  console.log('in token validation');
   const auth_header = req.headers['authorization'];
-  console.log('auth header: ', auth_header);
-  if (auth_header) {
-    try {
+  
+  if (!auth_header) {
+    return res.status(400).json({ status: 400, message: 'User does not have token' });
+  }
 
-      const token = auth_header.split(' ')[1];
+  try {
+    const token = auth_header.split(' ')[1];
+    req.token = token;
 
-      req.token = token;
-      const decodedToken = verifyToken(req.token, next);
-      console.log({ decodedToken });
+    const decodedToken = verifyToken(req.token, next);
+    console.log("Decoded token:", decodedToken);
 
-      if (!decodedToken) {
-        res.status(400).json({
-          status: 400,
-          message: 'Invalid token',
-        });
-      } else {
-        if (decodedToken.role === 'customer') {
-          console.log('is Customer');
-          console.log(`params: ${req.params}`);
-
-          if (decodedToken.expired) {
-            let decoded = jwt.decode(token);
-            console.log("username from decoded",decodedToken.Username);
-            const user = onlineCustomerModel.findById(
-              decoded.customerID,
-              (err, res) => {
-                console.log('Result:');
-                // console.log(res);
-              }
-            );
-            console.log(user);
-            user.token = jwt.sign(
-              {
-                user,
-              },
-              JWT_SECRET,
-              {
-                expiresIn: '15m', //change
-              }
-            );
-            req.user = { user, role: decoded.role };
-            next();
-          } else {
-            let decoded = jwt.decode(token);
-            console.log('not expired');
-
-            onlineCustomerModel.findById(decodedToken.customerID, (err, res) => {
-              if (err) {
-                console.log({ err });
-              }
-              let user = res;
-              console.log("user from db", user);
-              user.token = token;
-              user.role = decoded.role;
-              req.user = user;
-              next();
-            });
-
-            console.log('user customer got in jwt authorization');
-
-            // req.user = _.pick(user, models.User.returnable);
-          }
-        } else if (
-          decodedToken.role === 'employee' ||
-          decodedToken.role === 'manager'
-        ) {
-          console.log('is employee');
-          console.log(`params: ${req.params}`);
-
-          if (decodedToken.expired) {
-            res.status(401).json({
-              status: 400,
-              message: 'Token Expired',
-            });
-          } else {
-            let decoded = jwt.decode(token);
-            console.log('not expired');
-
-            onlineEmployeeModel.findByUsername(
-              decoded.OnlineID,
-              (err, response) => {
-                if (err.kind !== 'success') {
-                  res.status(400).json({
-                    status: 400,
-                    message: 'Error with your token',
-                  });
-                  return;
-                }
-                let user = response;
-                user.token = token;
-                user.role = decoded.role;
-                req.user = user;
-                next();
-              }
-            );
-
-            console.log('user employee got in jwt authorization');
-
-            // req.user = _.pick(user, models.User.returnable);
-          }
-        }
-      }
-    } catch (err) {
-      console.log({ err });
-      res.status(400).json({
-        status: 400,
-        message: 'Error with your token',
-      });
+    if (!decodedToken) {
+      return res.status(400).json({ status: 400, message: 'Invalid token' });
     }
-  } else {
-    res.status(400).json({
-      status: 400,
-      message: 'User does not have  token',
-    });
+
+    // FIX: Define roles here so it is available to all blocks below
+    const roles = Array.isArray(decodedToken.roles) ? decodedToken.roles : [decodedToken.roles];
+
+    // 1. CUSTOMER LOGIC
+    if (roles.includes('customer')) {
+      if (decodedToken.expired) {
+        // Handle expiration (consider if you really want to refresh here or just force logout)
+        return res.status(401).json({ status: 401, message: 'Token Expired' });
+      }
+
+      onlineCustomerModel.findById(decodedToken.customerId , (err, user) => {
+        console.log("Customer lookup result:", { err, user });
+        if (err.kind === 'not_found' || err.kind === 'error' || !user) {
+          return res.status(400).json({ status: 400, message: 'Customer not found' });
+        }
+        let customerData = user;
+        customerData.role = 'customer'; // Add role info to user data
+        req.user = customerData; // Attach user data to request
+        next();
+      });
+
+    // 2. EMPLOYEE / MANAGER LOGIC
+    } else if (roles.includes('employee') || roles.includes('manager')) {
+      if (decodedToken.expired) {
+        return res.status(401).json({ status: 401, message: 'Token Expired' });
+      }
+
+      // FIX: Ensure you are using the correct field from the token (OnlineID or username)
+      onlineEmployeeModel.findByUsername(decodedToken.username, (err, response) => {
+        console.log("Employee lookup result:", { err, response });
+        if (err.kind === 'not_found' || err.kind === 'error' || !response) {
+          return res.status(400).json({ status: 400, message: 'Employee not found' });
+        }
+        let employeeData = response;
+        employeeData.role = roles.includes('manager') ? 'manager' : 'employee';
+        req.user = employeeData;
+        next();
+      });
+    } else {
+      return res.status(403).json({ status: 403, message: 'Unauthorized role' });
+    }
+
+  } catch (err) {
+    console.error({ err });
+    res.status(400).json({ status: 400, message: 'Error processing token' });
   }
 };
 
