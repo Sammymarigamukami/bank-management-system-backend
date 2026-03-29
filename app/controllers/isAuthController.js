@@ -17,7 +17,8 @@ const userAuth = async (req, res) => {
         id: req.user.customer_id || req.user.employee_id,
         username: req.user.username|| req.user.user_name,
         email: req.user.email || null,
-        role: req.user.role
+        role: req.user.role,
+        phone: req.user.phone || null
       }
     });
 

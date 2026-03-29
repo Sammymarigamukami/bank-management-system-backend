@@ -190,4 +190,135 @@ OnlineCustomer.delete = (id, result) => {
   });
 };
 
+OnlineCustomer.countAll = (result) => {
+  const query = "SELECT COUNT(*) AS total FROM customers";
+  
+  sql.query(query, (err, res) => {
+    if (err) {
+      console.log("error: ", err);
+      result(err, null); // Send error to callback
+      return;
+    }
+    
+    // Send the actual number to the callback
+    result(null, res[0].total); 
+  });
+};
+
+OnlineCustomer.countActive = (result) => {
+  const query = "SELECT COUNT(*) AS active FROM accounts WHERE status = 'active'";
+  
+  sql.query(query, (err, res) => {
+    if (err) {
+      console.log("error: ", err);
+      // Pass the error to the callback
+      result(err, null);
+      return;
+    }
+    
+    // Pass the actual count (res[0].active) to the callback
+    console.log("Count Active Result:", res[0].active);
+    result(null, res[0].active);
+  });
+};
+
+
+OnlineCustomer.getFullProfile = (customerId, result) => {
+  const query = `
+    SELECT 
+      /* Overview & Personal Information */
+      c.customer_id as customerId,
+      CONCAT(c.first_name, ' ', c.last_name) as name,
+      c.username,
+      c.email,
+      c.phone,                       -- Matches your 'phone' column
+      c.status,                      -- Matches your ENUM('active','suspended','closed')
+      c.created_at as joinedDate,
+      
+      /* Active Account Details */
+      a.account_id,
+      a.account_number as accountNumber,
+      a.balance as currentBalance,
+      a.created_at as accountCreatedAt,
+      
+      /* Aggregate Financial Stats */
+      (SELECT SUM(amount) FROM transactions 
+       WHERE account_id = a.account_id AND transaction_type = 'deposit') as totalDeposit,
+       
+      (SELECT SUM(amount) FROM transactions 
+       WHERE account_id = a.account_id AND transaction_type = 'withdrawal') as totalWithdrawal,
+       
+      (SELECT COUNT(*) FROM transactions 
+       WHERE account_id = a.account_id) as transactionCount
+       
+    FROM customers c
+    JOIN accounts a ON c.customer_id = a.customer_id
+    WHERE c.customer_id = ? 
+    LIMIT 1`;
+
+  sql.query(query, [customerId], (err, res) => {
+    if (err) {
+      console.error("Error fetching full profile:", err);
+      return result(err, null);
+    }
+    
+    if (res.length) {
+      // Clean up nulls and ensure numeric types
+      const profile = {
+        ...res[0],
+        currentBalance: parseFloat(res[0].currentBalance || 0),
+        totalDeposit: parseFloat(res[0].totalDeposit || 0),
+        totalWithdrawal: parseFloat(res[0].totalWithdrawal || 0),
+        transactionCount: parseInt(res[0].transactionCount || 0)
+      };
+      result(null, profile);
+    } else {
+      result({ kind: "not_found" }, null);
+    }
+  });
+};
+
+OnlineCustomer.getAllForAdmin = (result) => {
+  const query = `
+    SELECT 
+      c.customer_id as customerId,
+      CONCAT(c.first_name, ' ', c.last_name) as name,
+      c.email,
+      c.phone,
+      a.account_type,
+      c.status as customerStatus,
+      a.status as accountStatus,
+      /* Get the most recent balance from the ledger */
+      COALESCE(a.balance, 0) as currentBalance,
+      
+      /* Aggregate Transaction Summary */
+      (SELECT IFNULL(SUM(amount), 0) FROM transactions 
+       WHERE account_id = a.account_id AND transaction_type = 'deposit') as totalDeposits,
+       
+      (SELECT COUNT(*) FROM transactions 
+       WHERE account_id = a.account_id) as totalActivity
+       
+    FROM customers c
+    LEFT JOIN accounts a ON c.customer_id = a.customer_id
+    ORDER BY c.created_at DESC`;
+
+  sql.query(query, (err, res) => {
+    if (err) {
+      console.error("Error fetching admin data:", err);
+      result(err, null);
+      return;
+    }
+
+    // Format results for the Admin Table/UI
+    const customersList = res.map(row => ({
+      ...row,
+      currentBalance: parseFloat(row.currentBalance).toFixed(2),
+      totalDeposits: parseFloat(row.totalDeposits).toFixed(2),
+      totalActivity: parseInt(row.totalActivity)
+    }));
+
+    result(null, customersList);
+  });
+};
+
 module.exports = OnlineCustomer;

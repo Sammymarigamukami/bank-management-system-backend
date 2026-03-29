@@ -7,6 +7,7 @@ const bcrypt = require('bcrypt');
 const db = require('../models/db.js');
 const jwt = require('jsonwebtoken');
 const CustomerRoleModel = require('../models/customerRoleModel.js');
+const Audit = require('../models/auditLogModel.js');
 
 require('dotenv').config();
 
@@ -95,6 +96,7 @@ exports.customerLogin = (req, res) => {
   });
 };
 
+
 exports.employeeLogin = (req, res) => {
   console.log("Login attempt");
 
@@ -110,7 +112,7 @@ exports.employeeLogin = (req, res) => {
 
   const bcrypt = require("bcrypt");
 
-  //  Get auth record
+  // Get auth record
   EmployeeAuthModel.findByUsername(userName, (err, authData) => {
     if (err) {
       return res.status(500).json({
@@ -126,7 +128,7 @@ exports.employeeLogin = (req, res) => {
       });
     }
 
-    //  Compare password
+    // Compare password
     bcrypt.compare(password, authData.password_hash, (err, match) => {
       if (err) {
         return res.status(500).json({
@@ -136,6 +138,15 @@ exports.employeeLogin = (req, res) => {
       }
 
       if (!match) {
+        // OPTIONAL: Log failed attempt for security
+        Audit.log({
+          employee_id: authData.employee_id,
+          action: 'LOGIN_FAILED',
+          entity: 'AUTH',
+          entity_id: authData.employee_id,
+          ip_address: req.ip || req.connection.remoteAddress
+        }, () => {});
+
         return res.status(401).json({
           auth: "fail",
           message: "Incorrect password",
@@ -144,7 +155,7 @@ exports.employeeLogin = (req, res) => {
 
       const employeeId = authData.employee_id;
 
-      //  Load employee profile (branch, status, etc.)
+      // Load employee profile
       EmployeeModel.findById(employeeId, (err, employee) => {
         if (err || !employee) {
           return res.status(500).json({
@@ -153,7 +164,7 @@ exports.employeeLogin = (req, res) => {
           });
         }
 
-        //  Load roles using employeeId
+        // Load roles
         EmployeeRoleModel.getRoles(employeeId, (err, roles) => {
           if (err) {
             return res.status(500).json({
@@ -164,7 +175,7 @@ exports.employeeLogin = (req, res) => {
 
           const roleNames = roles.map(r => r.role_name);
 
-          //  Build JWT payload (SAFE data only)
+          // Build JWT payload
           const payload = {
             employeeId: employee.employee_id,
             username: userName,
@@ -174,22 +185,36 @@ exports.employeeLogin = (req, res) => {
 
           const token = jwt.sign(payload, JWT_SECRET, { expiresIn: "2h" });
 
-          //  Response
-          res.json({
-            auth: "success",
-            username: userName,
-            token,
-            employeeId: employee.employee_id,
-            branchId: employee.branch_id,
-            roles: roleNames,
-          });
+          // --- WIRE IN THE AUDIT LOG HERE ---
+          const auditEntry = {
+            employee_id: employee.employee_id,
+            action: 'LOGIN_SUCCESS',
+            entity: 'EMPLOYEES',
+            entity_id: employee.employee_id,
+            ip_address: req.ip || req.headers['x-forwarded-for'] || '0.0.0.0'
+          };
 
-          console.log("Login successful for:", employee.employee_id);
+          Audit.log(auditEntry, (auditErr) => {
+            if (auditErr) console.error("Audit log failed to save:", auditErr);
+
+            // Send Response only after trying to log
+            res.json({
+              auth: "success",
+              username: userName,
+              token,
+              employeeId: employee.employee_id,
+              branchId: employee.branch_id,
+              roles: roleNames,
+            });
+
+            console.log("Login successful & logged for:", employee.employee_id);
+          });
         });
       });
     });
   });
 };
+
 
 exports.createEmployee = (req, res) => {
   const {
@@ -206,6 +231,7 @@ exports.createEmployee = (req, res) => {
     password,
   } = req.body;
 
+  // 1. Validation
   if (!req.body || !password || !user_name || !first_name || !last_name || !email) {
     return res.status(400).json({
       success: false,
@@ -215,6 +241,7 @@ exports.createEmployee = (req, res) => {
 
   // Generate public employee ID
   const employeeId = Math.random().toString(36).substring(2, 10).toUpperCase();
+  const creatorId = req.employeeId; // Retrieved from your Auth Middleware (the admin)
 
   const employee = {
     employee_id: employeeId,
@@ -230,86 +257,62 @@ exports.createEmployee = (req, res) => {
   };
 
   bcrypt.hash(password, 10, (err, hashedPassword) => {
-    if (err) return res.status(500).json({ success: false, message: "Password hashing failed", error: err.message });
+    if (err) return res.status(500).json({ success: false, message: "Password hashing failed" });
 
     db.getConnection((err, connection) => {
-      if (err) return res.status(500).json({ success: false, message: "DB connection failed", error: err.message });
+      if (err) return res.status(500).json({ success: false, message: "DB connection failed" });
 
       connection.beginTransaction((err) => {
-        if (err) {
-          connection.release();
-          return res.status(500).json({ success: false, message: "Transaction start failed", error: err.message });
-        }
+        if (err) { connection.release(); return res.status(500).json({ success: false, message: "Transaction failed" }); }
 
-        //  Create employee
+        // Create employee
         EmployeeModel.create(employee, connection, (err, empResult) => {
-          console.log("EmployeeModel.create result: ", empResult);
-          console.log("EmployeeModel.create error: ", err);
-          if (err) {
-            return res.status(500).json({
-              success: false,
-              message: "Failed to create employee",
-              error: err.code || err.message,
-            });
-          }
+          if (err) return connection.rollback(() => { connection.release(); res.status(500).json({ success: false, error: err.message }); });
 
-          //  Create auth record
+          // Create auth record
           EmployeeAuthModel.create(
             { employee_id: employeeId, username: user_name, password_hash: hashedPassword },
             connection,
             (err, authResult) => {
-              console.log("EmployeeAuthModel.create result: ", authResult);
-              console.log("EmployeeAuthModel.create error: ", err);
-              if (err) {
-                return res.status(500).json({
-                  success: false,
-                  message: "Failed to create auth record",
-                  error: err.code || err.message,
-                });
-              }
+              if (err) return connection.rollback(() => { connection.release(); res.status(500).json({ success: false, error: err.message }); });
 
-              //  Fetch default 'employee' role
+              // Fetch default 'employee' role
               RoleModel.findByName('employee', (err, roleData) => {
-                console.log("RoleModel.findByName result: ", roleData);
-                console.log("RoleModel.findByName error: ", err);
-                if (err || !roleData) {
-                return res.status(500).json({
-                  success: false,
-                  message: "Failed to create auth record",
-                  error: err.code || err.message,
-                });
-                }
+                if (err || !roleData) return connection.rollback(() => { connection.release(); res.status(500).json({ success: false, message: "Role not found" }); });
 
-                //  Assign role to employee
+                // Assign role
                 EmployeeRoleModel.assignRole(employeeId, roleData.role_id, null, connection, (err, roleResult) => {
-                  console.log("EmployeeRoleModel.assignRole result: ", roleResult);
-                  console.log("EmployeeRoleModel.assignRole error: ", err);
-                  if (err) {
-                    return res.status(500).json({
-                      success: false,
-                      message: "Failed to assign role",
-                      error: err.code || err.message,
-                    });
-                  }
+                  if (err) return connection.rollback(() => { connection.release(); res.status(500).json({ success: false, error: err.message }); });
 
-                  //  Commit transaction
+                  // --- COMMIT TRANSACTION ---
                   connection.commit((err) => {
                     if (err) {
                       return connection.rollback(() => {
                         connection.release();
-                        res.status(500).json({
-                          success: false,
-                          message: "Transaction commit failed",
-                          error: err.message,
-                        });
-                      }
-                  )}
-                  console.log("Transaction committed successfully");
-                    connection.release();
-                    res.status(201).json({
-                      success: true,
-                      message: "Employee + Auth + Role created successfully",
-                      employee_id: employeeId,
+                        res.status(500).json({ success: false, message: "Commit failed" });
+                      });
+                    }
+
+                    // --- WIRE IN AUDIT LOG HERE ---
+                    const auditEntry = {
+                      employee_id: creatorId || 'SYSTEM', // The admin who created the user
+                      action: 'CREATE_EMPLOYEE',
+                      entity: 'EMPLOYEES',
+                      entity_id: employeeId, // The ID of the new employee
+                      ip_address: req.ip || req.headers['x-forwarded-for'] || '0.0.0.0'
+                    };
+
+                    Audit.log(auditEntry, (auditErr) => {
+                      if (auditErr) console.error("Audit log failed:", auditErr);
+
+                      console.log("Transaction committed and audit logged.");
+                      connection.release();
+
+                      res.status(201).json({
+                        success: true,
+                        message: "Employee + Auth + Role created successfully",
+                        employee_id: employeeId,
+                      });
                     });
                   });
                 });

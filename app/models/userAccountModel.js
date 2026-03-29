@@ -222,4 +222,5 @@ static getActiveAccounts(customerID, callback) {
  }
 }
 
+
 module.exports = AccountModel;
