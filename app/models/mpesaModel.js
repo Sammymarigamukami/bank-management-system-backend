@@ -19,21 +19,93 @@ MpesaTransaction.create = (newTx, result) => {
   });
 };
 
-//  Update Status (Callback)
+
 MpesaTransaction.updateStatusByCheckoutID = (checkoutID, updateData, result) => {
-  const query = `
-    UPDATE mpesa_transactions 
-    SET status = ?, mpesa_code = ?, updated_at = CURRENT_TIMESTAMP 
-    WHERE checkout_request_id = ?
-  `;
-  sql.query(query, [updateData.status, updateData.mpesa_code, checkoutID], (err, res) => {
+  // 1. Get a connection for the transaction
+  sql.getConnection((err, connection) => {
     if (err) return result(err, null);
-    if (res.affectedRows == 0) return result({ kind: "not_found" }, null);
-    result(null, res);
+
+    connection.beginTransaction((err) => {
+      if (err) return connection.release(), result(err, null);
+
+      // A. Get the original M-Pesa record to find account_id and amount
+      const findSql = "SELECT * FROM mpesa_transactions WHERE checkout_request_id = ?";
+      connection.query(findSql, [checkoutID], (err, rows) => {
+        if (err || rows.length === 0) {
+          return connection.rollback(() => {
+            connection.release();
+            result(err || { kind: "not_found" }, null);
+          });
+        }
+
+        const mpesaTx = rows[0];
+        const { account_id, amount } = mpesaTx;
+
+        // B. Update M-Pesa Transaction Status
+        const updateMpesaSql = `
+          UPDATE mpesa_transactions 
+          SET status = ?, mpesa_code = ?, updated_at = CURRENT_TIMESTAMP 
+          WHERE checkout_request_id = ?`;
+        
+        connection.query(updateMpesaSql, [updateData.status, updateData.mpesa_code, checkoutID], (err) => {
+          if (err) return connection.rollback(() => { connection.release(); result(err, null); });
+
+          // If the status isn't 'completed', we stop here and commit (e.g., if it failed)
+          if (updateData.status !== 'completed') {
+            return connection.commit((err) => {
+              connection.release();
+              if (err) return result(err, null);
+              result(null, { message: "Status updated (not completed)" });
+            });
+          }
+
+          // C. Update Account Balance (Strictly 'current' account)
+          const updateAccountSql = `
+            UPDATE accounts 
+            SET balance = balance + ? 
+            WHERE account_id = ? AND account_type = 'current' AND status = 'active'`;
+          
+          connection.query(updateAccountSql, [amount, account_id], (err, accountRes) => {
+            if (err || accountRes.affectedRows === 0) {
+              return connection.rollback(() => {
+                connection.release();
+                result(err || { kind: "invalid_account", message: "Account is not 'current' or not 'active'" }, null);
+              });
+            }
+
+            // D. Fetch new balance for the ledger
+            connection.query("SELECT balance FROM accounts WHERE account_id = ?", [account_id], (err, balanceRows) => {
+              if (err) return connection.rollback(() => { connection.release(); result(err, null); });
+              
+              const newBalance = balanceRows[0].balance;
+
+              // E. Insert into General Transactions table
+              const ledgerSql = `
+                INSERT INTO transactions 
+                (account_id, transaction_type, amount, balance_after, reference_code, description) 
+                VALUES (?, 'deposit', ?, ?, ?, ?)`;
+              
+              const description = `M-Pesa Deposit: ${updateData.mpesa_code}`;
+              
+              connection.query(ledgerSql, [account_id, amount, newBalance, updateData.mpesa_code, description], (err) => {
+                if (err) return connection.rollback(() => { connection.release(); result(err, null); });
+
+                // F. Final Commit
+                connection.commit((err) => {
+                  if (err) return connection.rollback(() => { connection.release(); result(err, null); });
+                  
+                  connection.release();
+                  result(null, { success: true, newBalance });
+                });
+              });
+            });
+          });
+        });
+      });
+    });
   });
 };
 
-//  Find By Checkout ID (Callback)
 MpesaTransaction.findByCheckoutId = (checkoutID, result) => {
   sql.query("SELECT * FROM mpesa_transactions WHERE checkout_request_id = ?", [checkoutID], (err, res) => {
     if (err) return result(err, null);
@@ -75,16 +147,18 @@ MpesaTransaction.countAll = (result) => {
 };
 
 // Link Request IDs (REWRITTEN TO CALLBACK)
-MpesaTransaction.setCheckoutIDs = (referenceCode, merchantID, checkoutID, result) => {
-  const query = `
-    UPDATE mpesa_transactions 
-    SET merchant_request_id = ?, checkout_request_id = ? 
-    WHERE reference_code = ?
-  `;
-  sql.query(query, [merchantID, checkoutID, referenceCode], (err, res) => {
-    if (err) return result(err, null);
-    if (res.affectedRows === 0) return result({ kind: "not_found" }, null);
-    result(null, res);
+MpesaTransaction.setCheckoutIDs = (referenceCode, merchantID, checkoutID) => {
+  return new Promise((resolve, reject) => {
+    const query = `
+      UPDATE mpesa_transactions 
+      SET merchant_request_id = ?, checkout_request_id = ? 
+      WHERE reference_code = ?
+    `;
+    sql.query(query, [merchantID, checkoutID, referenceCode], (err, res) => {
+      if (err) return reject(err);
+      if (res.affectedRows === 0) return reject({ kind: "not_found" });
+      resolve(res);
+    });
   });
 };
 

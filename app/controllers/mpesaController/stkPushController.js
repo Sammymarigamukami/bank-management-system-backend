@@ -7,13 +7,10 @@ const {
 } = require("../../utils/mpesa.js");
 
 const MpesaTransaction = require("../../models/mpesaModel.js");
+const Account = require("../../models/userAccountModel.js"); // Ensure this is imported
 
 /**
  * Initiates an M-Pesa STK Push (Lipa Na M-Pesa Online)
- * 1. Validates input
- * 2. Creates a 'pending' record in the database
- * 3. Requests STK Push from Safaricom Daraja API
- * 4. Links the Daraja CheckoutRequestID to our internal record
  */
 const initializeSTKPush = async (req, res) => {
   try {
@@ -27,11 +24,26 @@ const initializeSTKPush = async (req, res) => {
       });
     }
 
+    // 2. Validate that the target account is a 'current' account
+    // This prevents users from trying to deposit into savings via this route
+    const accountValid = await new Promise((resolve) => {
+        Account.findByAccountId(accountId, (err, account) => {
+            if (err || !account || account.account_type !== 'current') resolve(false);
+            else resolve(true);
+        });
+    });
+
+    if (!accountValid) {
+        return res.status(400).json({
+            success: false,
+            error: "Deposits are only permitted for active Current Accounts."
+        });
+    }
+
     const orderId = `ORD-${Date.now()}`;
     const normalizedPhone = normalizeMsisdn(phone);
 
-    // 2. Create Initial Record (Pending)
-    // Using the model constructor and the create method we defined
+    // 3. Create Initial Record (Pending)
     const newTx = new MpesaTransaction({
       account_id: accountId,
       phone_number: normalizedPhone,
@@ -39,8 +51,8 @@ const initializeSTKPush = async (req, res) => {
       reference_code: orderId,
       status: 'pending'
     });
-    console.log("Creating Mpesa Transaction Record:", newTx);
 
+    // We still use the Promise wrapper here because .create is likely still using callbacks
     await new Promise((resolve, reject) => {
       MpesaTransaction.create(newTx, (err, result) => {
         if (err) return reject(err);
@@ -48,9 +60,7 @@ const initializeSTKPush = async (req, res) => {
       });
     });
 
-    console.log("Mpesa Transaction record created successfully for Order ID:", orderId);
-
-    // 3. Prepare Daraja Authentication & Payload
+    // 4. Prepare Daraja Authentication & Payload
     const timestamp = mpesaTimestamp();
     const token = await getAccessToken();
     const password = buildStkPassword(
@@ -59,7 +69,7 @@ const initializeSTKPush = async (req, res) => {
       timestamp
     );
 
-    // 4. Hit Safaricom Daraja API
+    // 5. Hit Safaricom Daraja API
     const stkResponse = await fetch(`${darajaBase}/mpesa/stkpush/v1/processrequest`, {
       method: "POST",
       headers: {
@@ -76,24 +86,25 @@ const initializeSTKPush = async (req, res) => {
         PhoneNumber: normalizedPhone,
         TransactionType: "CustomerPayBillOnline",
         AccountReference: orderId, 
-        TransactionDesc: "Wallet Deposit",
+        TransactionDesc: "Deposit to Current Account",
         CallBackURL: `${process.env.BASE_URL}/user/api/deposit/callback`,
       }),
     });
 
     const data = await stkResponse.json();
 
-    // 5. Check if Safaricom accepted the request
-    // ResponseCode "0" means the STK Push was successfully sent to the phone
+    // 6. Check if Safaricom accepted the request
     if (data.ResponseCode === "0") {
       
-      // 6. Link IDs using the clean Model Method
+      // 7. Link IDs using the NEW Promise-based Model Method
+      // NO MORE WRAPPING IN NEW PROMISE HERE!
       await MpesaTransaction.setCheckoutIDs(
         orderId, 
         data.MerchantRequestID, 
         data.CheckoutRequestID
       );
-      console.log("STK Push initiated successfully:", { orderId, MerchantRequestID: data.MerchantRequestID, CheckoutRequestID: data.CheckoutRequestID });
+
+      console.log("STK Push linked to order:", orderId);
 
       return res.status(200).json({
         success: true,
@@ -103,7 +114,6 @@ const initializeSTKPush = async (req, res) => {
       });
       
     } else {
-      // Handle cases where Safaricom rejected the request immediately
       return res.status(400).json({
         success: false,
         error: data.errorMessage || "STK Push failed to initialize",
@@ -123,4 +133,3 @@ const initializeSTKPush = async (req, res) => {
 module.exports = {
   initializeSTKPush,
 };
-
