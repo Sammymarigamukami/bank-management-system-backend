@@ -151,25 +151,36 @@ OnlineCustomer.findById = (customer_id, result) => {
   console.log("in findById");
   console.log("customer_id:", customer_id);
 
-  const query = `SELECT * FROM customers WHERE customer_id = ?`;
+  // Updated query to JOIN with the accounts table to get the account_id
+  const query = `
+    SELECT 
+      c.*, 
+      a.account_id,
+      a.account_number,
+      a.balance
+    FROM customers c
+    LEFT JOIN accounts a ON c.customer_id = a.customer_id
+    WHERE c.customer_id = ?
+    LIMIT 1`;
 
   // IMPORTANT: wrap param in array
   sql.query(query, [customer_id], (err, res) => {
-    console.log("query result:", res);
-
     if (err) {
       console.log("error:", err);
       return result({ kind: "error", ...err }, null);
     }
 
     if (res.length) {
-      console.log("found customer:", res[0]);
+      // The account_id is now included in res[0] thanks to the JOIN
+      console.log("found customer with account:", res[0]);
       return result({ kind: "success" }, res[0]);
     } else {
+      // Not found
       return result({ kind: "not_found" }, null);
     }
   });
 };
+
 
 OnlineCustomer.delete = (id, result) => {
   const query = `DELETE FROM customers WHERE customer_id = ?`;

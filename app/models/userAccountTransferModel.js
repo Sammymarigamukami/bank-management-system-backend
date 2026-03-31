@@ -131,13 +131,8 @@ class AccountTransferModel {
             callback(error, null);
           });
         }
-
       });
-
     });
-
   }
-
 }
-
 module.exports = AccountTransferModel;
