@@ -57,25 +57,40 @@ exports.issueNewCard = (req, res) => {
 
 exports.getCardDetails = (req, res) => {
   const { card_id } = req.params;
+  const customer_id = req.user?.customer_id;
 
-  // We reuse the getByCardNumber or add a getById if needed. 
-  // For now, assuming a generic SQL query for details:
-  const sql = "SELECT * FROM cards WHERE card_id = ?";
-  db.query(sql, [card_id], (err, rows) => {
+  if (!customer_id) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+  // UPDATED SQL: Joining accounts and customers to get the holder name
+  const sql = `
+    SELECT 
+      c.*, 
+      a.account_number, 
+      a.balance,
+      cust.first_name,
+      cust.last_name,
+      CONCAT(cust.first_name, ' ', cust.last_name) AS account_holder_name
+    FROM cards c
+    JOIN accounts a ON c.account_id = a.account_id
+    JOIN customers cust ON a.customer_id = cust.customer_id
+    WHERE c.card_id = ? AND a.customer_id = ?`;
+
+  db.query(sql, [card_id, customer_id], (err, rows) => {
     if (err) {
-      return res.status(500).json({ success: false, message: "Server error" });
+      console.error("[Get Card Details Error]", err);
+      return res.status(500).json({ success: false, message: "Database error" });
     }
+    
     if (rows.length === 0) {
-      return res.status(404).json({ success: false, message: "Card not found" });
+      return res.status(404).json({ success: false, message: "Card not found or access denied." });
     }
 
-    res.status(200).json({
-      success: true,
-      data: rows[0]
+    res.status(200).json({ 
+      success: true, 
+      data: rows[0] 
     });
   });
 };
-
 
 exports.deleteCard = (req, res) => {
   const { card_id } = req.params;
@@ -269,5 +284,14 @@ exports.unfreezeCard = (req, res) => {
         status: 'active' 
       });
     });
+  });
+};
+
+exports.getCustomerCards = (req, res) => {
+  const customer_id = req.user?.customer_id;
+
+  CardModel.getByCustomerId(customer_id, (err, cards) => {
+    if (err) return res.status(500).json({ success: false, message: "Error retrieving cards" });
+    res.status(200).json({ success: true, data: cards });
   });
 };

@@ -21,7 +21,9 @@ module.exports = (app) => {
     router.get('/api/accounts/getCardDetails/:card_id', jwtauth, cardActions.getCardDetails);
     router.post('/api/accounts/card/freeze', jwtauth, cardActions.freezeCard);
     router.post('/api/accounts/card/unfreeze', jwtauth, cardActions.unfreezeCard);
-    // router.post('/api/accounts/card/transaction', jwtauth, cardActions.authorizeCardTransaction);
+    //router.post('/api/accounts/card/transaction', jwtauth, cardActions.validateCardTransaction);
+    router.get('/api/accounts/card/customer/all', jwtauth, cardActions.getCustomerCards);
+    router.delete('/api/accounts/card/delete/:card_id', jwtauth, cardActions.deleteCard);
 
     app.use('/user', router);
 }
