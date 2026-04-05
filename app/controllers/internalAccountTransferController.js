@@ -1,21 +1,27 @@
 
 const AccountTransferModel = require("../models/userAccountTransferModel.js")
+
 exports.transfer = (req, res) => {
 
-  const { fromAccountId, toAccountId, amount } = req.body;
+    const customerId = req.user?.customer_id; 
+    console.log("Initiating transfer for customer:", req.user);
+    const { fromAccountId, toAccountId, amount } = req.body;
 
-  AccountTransferModel.transferBetweenAccounts(
-    fromAccountId,
-    toAccountId,
-    amount,
-    (err, result) => {
+    if(!customerId) return res.status(401).json({ success: false, message: "Unauthorized" });
 
-      if (err) {
-        return res.status(400).json({ error: err.message });
+    AccountTransferModel.transferBetweenOwnAccounts(
+      customerId,
+      fromAccountId,
+      toAccountId,
+      amount,
+      (err, result) => {
+        if (err) {
+          return res.status(400).json({ 
+            success: false,
+            message: err.message 
+          });
+        }
+        res.status(200).json(result);
       }
-
-      res.json(result);
-    }
-  );
-
+    );
 };

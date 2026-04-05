@@ -1,6 +1,9 @@
 const { isAccountOwnedByCustomer } = require('../middleware/middleware.js');
 const AccountModel = require('../models/userAccountModel.js');
+const generateAccountNumber = require('../utils/accountNumberGenerator.js');
+const sql = require('../models/db.js');
 
+const accountNumber = generateAccountNumber();
 // Retrieve all accounts for a customer or all accounts
 exports.findAll = (req, res) => {
   //console.log(req.params);
@@ -171,6 +174,7 @@ exports.transferFundByAccountID = (req, res) => {
   );
 };
 
+
 exports.transferFundsByCustomerID = (req, res) => {
   // 1. Destructure the request body
   const { receiverCustomerId, amount, description } = req.body;
@@ -238,4 +242,190 @@ exports.transferFundsByCustomerID = (req, res) => {
       });
     }
   );
+};
+
+// Freeze an account for security reasons (e.g., suspected fraud)
+exports.freezeAccount = (req, res) => {
+  const { accountId } = req.params;
+
+  AccountModel.updateAccountStatus(accountId, 'frozen', (err, result) => {
+    if (err) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
+    res.status(200).json({ success: true, message: "Account has been frozen for security reasons.", data: result });
+  });
+};
+
+
+exports.closeAccount = (req, res) => {
+  const { accountId } = req.params;
+
+  AccountModel.updateAccountStatus(accountId, 'closed', (err, result) => {
+    if (err) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
+    res.status(200).json({ success: true, message: "Account has been permanently closed.", data: result });
+  });
+};
+
+// Activate a business account after verification
+exports.activateAccounts = (req, res) => {
+  const { customerID, accountType } = req.params;
+
+  // 1. Authorization Guard
+  if (req.user?.role !== 'admin' && req.user?.role !== 'employee') {
+    return res.status(403).json({
+      success: false,
+      message: "Access Denied. Only authorized staff can verify business accounts."
+    });
+  }
+
+  // 2. CHECK: Does this account type already exist for this customer?
+  const checkQuery = "SELECT * FROM accounts WHERE customer_id = ? AND account_type = ?";
+  
+  sql.query(checkQuery, [customerID, accountType], (err, existingAccounts) => {
+    if (err) {
+      return res.status(500).json({ success: false, message: "Error checking existing accounts." });
+    }
+
+    if (existingAccounts.length > 0) {
+      const account = existingAccounts[0];
+      if (account.status === 'active') {
+        return res.status(409).json({ 
+          success: false, 
+          message: `This customer already has an active ${accountType} account.` 
+        });
+      }
+      // If it exists but is 'not_active', you might want to update it instead of inserting new
+      return res.status(400).json({ 
+        success: false, 
+        message: `An inactive ${accountType} account already exists for this user.` 
+      });
+    }
+
+
+    const accountData = {
+      customer_id: customerID,
+      account_number: accountNumber,
+      account_type: accountType,
+      status: 'not_active' // Initial state
+    };
+
+    // 4. Perform Insertion
+    sql.query("INSERT INTO accounts SET ?", accountData, (err, dbres) => {
+      if (err) {
+        console.error("Insert Error:", err);
+        return res.status(500).json({ success: false, message: "Database error during account creation." });
+      }
+
+      // 5. Update Status to Active
+      AccountModel.updateAccountStatus(dbres.insertId, 'active', (err) => {
+        if (err) {
+          return res.status(400).json({ success: false, message: err.message });
+        }
+
+        return res.status(201).json({
+          success: true,
+          message: "Business account has been successfully verified and activated.",
+          data: { 
+            accountId: dbres.insertId, 
+            customer_id: customerID,
+            account_number: accountNumber,
+            account_type: accountType,
+            status: 'active'
+          }
+        });
+      });
+    });
+  });
+};
+
+
+exports.closeBusinessAccount = (req, res) => {
+  const { accountId } = req.params;
+
+  // Strict Admin-Only Guard for terminal actions
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json({
+      success: false,
+      message: "Access Denied. Only administrators can permanently close business accounts."
+    });
+  }
+
+  // Uses the specialized blockBusinessAccount method from the model
+  AccountModel.blockBusinessAccount(accountId, (err, result) => {
+    if (err) {
+      const statusCode = err.message === "Account not found" ? 404 : 400;
+      return res.status(statusCode).json({ success: false, message: err.message });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Business account has been permanently closed/blocked.",
+      data: result
+    });
+  });
+};
+
+
+exports.closeSavingsAccount = (req, res) => {
+  const { accountId } = req.params;
+
+  // Strict Admin-Only Guard
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json({
+      success: false,
+      message: "Access Denied. Only administrators can permanently close savings accounts."
+    });
+  }
+
+  AccountModel.blockSavingsAccount(accountId, (err, result) => {
+    if (err) {
+      const statusCode = err.message === "Account not found" ? 404 : 400;
+      return res.status(statusCode).json({ success: false, message: err.message });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Savings account has been permanently closed/blocked.",
+      data: result
+    });
+  });
+};
+
+
+exports.updateStatus = (req, res) => {
+  const { accountId } = req.params;
+  const { status } = req.body; // e.g., 'frozen' or 'closed'
+
+  // 1. Strict Authorization Guard: Only 'admin' can freeze/close accounts
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json({ 
+      success: false, 
+      message: "Access Denied. Only administrators can freeze or close accounts." 
+    });
+  }
+
+  // 2. Input Validation
+  if (!['frozen', 'closed'].includes(status)) {
+    return res.status(400).json({ 
+      success: false, 
+      message: "Invalid status requested. Use 'frozen' or 'closed'." 
+    });
+  }
+
+  // 3. Call Model Logic
+  AccountModel.updateAccountStatus(accountId, status, (err, result) => {
+    if (err) {
+      // Map model errors to response codes
+      const statusCode = err.message === "Account not found" ? 404 : 400;
+      return res.status(statusCode).json({ success: false, message: err.message });
+    }
+    
+    res.status(200).json({ 
+      success: true, 
+      message: `Account status updated to ${status} successfully.`, 
+      data: result 
+    });
+  });
 };

@@ -9,24 +9,28 @@ const userAuth = async (req, res) => {
       });
     }
 
-    // 1. Determine the Role and Identity
     const isCustomer = !!req.user.customer_id;
     const userId = req.user.customer_id || req.user.employee_id;
     
     let accountId = null;
     let accountNumber = null;
+    let allAccounts = {}; // Store the categorized object here
 
-    // 2. Only fetch account details if the user is a Customer
     if (isCustomer) {
-      const customerAccounts = await new Promise((resolve) => {
+      // 1. Fetch categorized accounts
+      allAccounts = await new Promise((resolve) => {
         AccountModel.getActiveAccounts(req.user.customer_id, (err, accounts) => {
-          if (err || !accounts || accounts.length === 0) return resolve([]);
+          if (err || !accounts || Object.keys(accounts).length === 0) {
+            return resolve({}); 
+          }
           resolve(accounts);
         });
       });
 
-      // Find the primary 'current' account for M-Pesa deposits
-      const currentAccount = customerAccounts.find(acc => acc.type === 'current');
+      // 2. Access the 'checking' (current) account safely from the object
+      // Using 'checking' because that is the key in your categorized object
+      const currentAccount = allAccounts.current?.[0] || null;
+      console.log("current account for auth payload:", { currentAccount });
       
       if (currentAccount) {
         accountId = currentAccount.id;
@@ -39,24 +43,26 @@ const userAuth = async (req, res) => {
       id: userId,
       username: req.user.username || req.user.user_name,
       email: req.user.email || null,
-      role: req.user.role, // 'admin', 'customer', 'employee', etc.
+      role: req.user.role,
       phone: req.user.phone || null,
     };
+    // console.log("current account for auth payload:", { account });
 
-    // Only attach account info if it's a customer
     if (isCustomer) {
       userPayload.accountId = accountId;
       userPayload.accountNumber = accountNumber;
+      // Optional: Attach all accounts so the frontend doesn't have to fetch again immediately
+      userPayload.accounts = allAccounts; 
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       user: userPayload
     });
 
   } catch (error) {
     console.error("Auth payload error:", error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Server error"
     });

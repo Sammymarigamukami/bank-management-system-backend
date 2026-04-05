@@ -31,6 +31,7 @@ class AccountModel {
     });
   }
 
+
   static findByPhone(phone, callback) {
     const sql = `
       SELECT a.account_id, a.customer_id, a.account_number, a.account_type, a.balance, a.status, c.phone
@@ -66,58 +67,81 @@ class AccountModel {
     });
   }
 
+
   static updateAccountStatus(accountId, newStatus, callback) {
-  // get current state
-  const getSql = "SELECT status FROM accounts WHERE account_id = ?";
+    // Step 1: Get current state to validate transition
+    const getSql = "SELECT status FROM accounts WHERE account_id = ?";
 
-  db.query(getSql, [accountId], (err, rows) => {
-    if (err) return callback(err);
-
-    if (rows.length === 0) {
-      return callback(new Error("Account not found"));
-    }
-
-    const currentStatus = rows[0].status;
-
-    // define allowed transitions
-    const allowedTransitions = {
-      not_active: ['active'],
-      active: ['frozen', 'closed'],
-      frozen: ['active', 'closed'],
-      closed: [] // terminal state
-    };
-
-    // Validate transition
-    if (!allowedTransitions[currentStatus].includes(newStatus)) {
-      return callback(
-        new Error(`Invalid transition: ${currentStatus} → ${newStatus}`)
-      );
-    }
-
-    // update
-    const updateSql = `
-      UPDATE accounts
-      SET status = ?
-      WHERE account_id = ?
-    `;
-
-    db.query(updateSql, [newStatus, accountId], (err, result) => {
+    db.query(getSql, [accountId], (err, rows) => {
       if (err) return callback(err);
 
-      if (result.affectedRows === 0) {
-        return callback(new Error("Status update failed"));
+      if (rows.length === 0) {
+        return callback(new Error("Account not found"));
       }
 
-      callback(null, {
-        message: `Account status changed from ${currentStatus} to ${newStatus}`
+      const currentStatus = rows[0].status;
+
+      // Define allowed transitions (State Machine)
+      const allowedTransitions = {
+        not_active: ['active'],
+        active: ['frozen', 'closed'],
+        frozen: ['active', 'closed'],
+        closed: [] // Terminal state: once closed, it stays closed
+      };
+
+      // Validate transition
+      if (!allowedTransitions[currentStatus] || !allowedTransitions[currentStatus].includes(newStatus)) {
+        return callback(
+          new Error(`Invalid status transition: [${currentStatus}] to [${newStatus}] is not permitted.`)
+        );
+      }
+
+      // Step 2: Perform the update if validation passes
+      const updateSql = "UPDATE accounts SET status = ? WHERE account_id = ?";
+
+      db.query(updateSql, [newStatus, accountId], (err, result) => {
+        if (err) return callback(err);
+
+        if (result.affectedRows === 0) {
+          return callback(new Error("Status update failed at execution level."));
+        }
+
+        callback(null, {
+          success: true,
+          message: `Account status successfully changed from ${currentStatus} to ${newStatus}`,
+          accountId,
+          previousStatus: currentStatus,
+          currentStatus: newStatus
+        });
       });
     });
-  });
 }
 
 
-static getActiveAccounts(customerID, callback) {
+  static blockBusinessAccount(accountId, callback) {
+    const checkSql = "SELECT account_type FROM accounts WHERE account_id = ?";
+    db.query(checkSql, [accountId], (err, rows) => {
+      if (err) return callback(err);
+      if (rows[0]?.account_type !== 'business') {
+        return callback(new Error("Operation failed: Target is not a Business account."));
+      }
+      // 'closed' acts as the permanent 'blocked' state in this schema
+      this.updateAccountStatus(accountId, 'closed', callback);
+    });
+  }
 
+  static blockSavingsAccount(accountId, callback) {
+    const checkSql = "SELECT account_type FROM accounts WHERE account_id = ?";
+    db.query(checkSql, [accountId], (err, rows) => {
+      if (err) return callback(err);
+      if (rows[0]?.account_type !== 'savings') {
+        return callback(new Error("Operation failed: Target is not a Savings account."));
+      }
+      this.updateAccountStatus(accountId, 'closed', callback);
+    });
+  }
+
+static getActiveAccounts(customerID, callback) {
   const query = `
     SELECT 
       account_id,
@@ -127,8 +151,7 @@ static getActiveAccounts(customerID, callback) {
       balance,
       status
     FROM accounts
-    WHERE customer_id = ?
-      AND account_type = 'current'
+    WHERE customer_id = ? AND status = 'active'
   `;
 
   db.query(query, [customerID], (err, res) => {
@@ -137,18 +160,33 @@ static getActiveAccounts(customerID, callback) {
       return callback(err, null);
     }
 
-    const accounts = (res || []).map(acc => ({
-      id: acc.account_id,
-      number: acc.account_number,
-      type: acc.account_type,
-      currency: acc.currency,
-      balance: acc.balance ? Number(acc.balance) : 0,
-      status: acc.status
-    }));
+    // Use reduce to categorize and format in a single pass
+    const categorizedAccounts = (res || []).reduce((acc, curr) => {
+      // Determine the category (e.g., 'checking', 'savings')
+      const type = curr.account_type || 'other';
 
-    return callback(null, accounts);
+      // Initialize the array for this type if it doesn't exist
+      if (!acc[type]) {
+        acc[type] = [];
+      }
+
+      // Push the formatted account into the correct bucket
+      acc[type].push({
+        id: curr.account_id,
+        number: curr.account_number,
+        type: curr.account_type,
+        currency: curr.currency,
+        balance: curr.balance ? Number(curr.balance) : 0,
+        status: curr.status
+      });
+
+      return acc;
+    }, {});
+
+    // Returns an object: { checking: [...], savings: [...] }
+    return callback(null, categorizedAccounts);
   });
- }
+}
 
 
   static transferFundsByAccountId(senderCustomerId, receiverAccountId, amount, description, callback) {
