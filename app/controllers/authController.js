@@ -78,7 +78,7 @@ exports.customerLogin = (req, res) => {
         };
 
         const token = jwt.sign(payload, JWT_SECRET, {
-          expiresIn: '2h'
+          expiresIn: '8h'
         });
 
         // 5️⃣ Response
@@ -86,7 +86,7 @@ exports.customerLogin = (req, res) => {
           auth: 'success',
           token,
           customerId,
-          expires: '2h',
+          expires: '8h',
           userName,
           email: data.email,
           roles: roleNames,
@@ -183,7 +183,7 @@ exports.employeeLogin = (req, res) => {
             roles: roleNames
           };
 
-          const token = jwt.sign(payload, JWT_SECRET, { expiresIn: "2h" });
+          const token = jwt.sign(payload, JWT_SECRET, { expiresIn: "8h" });
 
           // --- WIRE IN THE AUDIT LOG HERE ---
           const auditEntry = {
@@ -371,13 +371,13 @@ exports.createOnlineCustomer = (req, res) => {
       const lastName = data.lastName;
       const role = data.role;
       const token = jwt.sign({ ...data, role: 'customer' }, JWT_SECRET, {
-        expiresIn: '2h',
+        expiresIn: '8h',
       });
 
       res.send({
         auth: 'success',
         role,
-        expires: '2h',
+        expires: '8h',
         email,
         customerID,
         userName,
