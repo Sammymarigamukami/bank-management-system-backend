@@ -18,7 +18,7 @@ require('./app/routes/customer.routes')(app);
 require('./app/routes/fd.routes')(app);
 require('./app/routes/account.routes')(app);
 require('./app/routes/physicalloan.routes')(app);
-require('./app/routes/onlineloan.routes')(app);
+require('./app/routes/loanRoute')(app);
 require('./app/routes/transaction.routes')(app);
 require('./app/routes/auth.routes')(app);
 require('./app/routes/withdrawal.routes')(app);
