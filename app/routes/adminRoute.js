@@ -5,6 +5,7 @@ module.exports = (app) => {
     const getFullProfile = require('../controllers/adminController.js');
     const getActiveAccountsReport = require('../controllers/adminController.js');
     const userAccount = require('../controllers/accountController.js');
+    const getAccountsReport = require('../controllers/reportAccountController.js');
     const router = require('express').Router();
 
     router.get('/api/dashboard', adminStatsController.getAdminDashboardData);
@@ -15,6 +16,7 @@ module.exports = (app) => {
     router.patch('/api/accounts/activate/business/:customerID/:accountType', jwtauth, userAccount.activateAccounts);
     router.patch('/api/accounts/close/savings/:accountId', jwtauth, userAccount.closeSavingsAccount);
     router.patch('/api/accounts/close/business/:accountId', jwtauth, userAccount.closeBusinessAccount);
+    router.get('/api/admin/reports/accounts', jwtauth, getAccountsReport.downloadAccountList);
 
     app.use('/admin', router);
 }
