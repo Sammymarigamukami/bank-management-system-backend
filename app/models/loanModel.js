@@ -106,6 +106,16 @@ class LoanTypeModel {
       callback(null, loanType);
     });
   }
+
+  static toggleOnlineStatus(id, isOnline, callback) {
+    const sql = "UPDATE loan_types SET is_online = ? WHERE loan_type_id = ?";
+    db.query(sql, [isOnline, id], callback);
+  }
+
+  static delete(id, callback) {
+    const sql = "DELETE FROM loan_types WHERE loan_type_id = ?";
+    db.query(sql, [id], callback);
+  }
 }
 
 /**
@@ -113,45 +123,109 @@ class LoanTypeModel {
  */
 class OnlineLoanModel {
   /**
-   * Triggers the 'apply_for_online_loan' Stored Procedure
-   * This procedure handles collateral check, disbursement, and status updates atomically
+   * Creates a new loan application record in the database.
+   * Handles the initial 'pending' state.
    */
   static apply(loanData, callback) {
-    const { customerId, fdId, savingsId, loanTypeId, amount, duration } = loanData;
-    
-    // Calling the MySQL Stored Procedure
-    const sql = "CALL apply_for_online_loan(?, ?, ?, ?, ?, ?, @p_status_code)";
-    
-    db.query(sql, [customerId, fdId, savingsId, loanTypeId, amount, duration], (err) => {
-        console.log("Stored Procedure executed with params:", { customerId, fdId, savingsId, loanTypeId, amount, duration });
+    const {
+      customerId,
+      loanTypeId,
+      amount,
+      duration,
+      interestRate,
+      purpose,
+      employmentStatus,
+      monthlyIncome,
+      idDocUrl,
+      bankStmtUrl
+    } = loanData;
+
+    // Removed fd_account_id and savings_account_id
+    const sql = `
+      INSERT INTO online_loans (
+        customer_id, 
+        loan_type_id, 
+        amount, 
+        duration_months, 
+        interest_rate, 
+        purpose, 
+        employment_status, 
+        monthly_income, 
+        id_doc_url, 
+        bank_stmt_url,
+        status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+    `;
+
+    const params = [
+      customerId,
+      loanTypeId,
+      amount,
+      duration,
+      interestRate,
+      purpose,
+      employmentStatus,
+      monthlyIncome,
+      idDocUrl || null,
+      bankStmtUrl || null
+    ];
+
+    db.query(sql, params, (err, result) => {
       if (err) {
-        console.error("Error executing stored procedure:", err);
+        console.error("Database error during loan application:", err);
         return callback(err);
       }
       
-      // Retrieve the output status code from the procedure
-      db.query("SELECT @p_status_code AS status", (err, rows) => {
-        console.log("Stored Procedure output status:", rows);
-        if (err) return callback(err);
-        const status = rows[0].status;
-        
-        if (status === 'SUCCESS') {
-          callback(null, { success: true, message: "Loan disbursed successfully" });
-        } else {
-          callback(new Error(status));
-        }
+      callback(null, { 
+        success: true, 
+        insertId: result.insertId,
+        message: "Loan application submitted successfully and is pending review." 
       });
     });
   }
 
+  /**
+   * Retrieves all loans for a specific customer.
+   * Updated to remove dependencies on account IDs.
+   */
   static getCustomerLoans(customerId, callback) {
     const sql = `
-      SELECT ol.*, lt.type_name, a.account_number as disbursed_to 
+      SELECT 
+        ol.loan_id,
+        ol.amount,
+        ol.duration_months,
+        ol.interest_rate,
+        ol.purpose,
+        ol.employment_status,
+        ol.monthly_income,
+        ol.status,
+        ol.id_doc_url,
+        ol.bank_stmt_url,
+        ol.created_at,
+        lt.type_name
       FROM online_loans ol
       JOIN loan_types lt ON ol.loan_type_id = lt.loan_type_id
-      JOIN accounts a ON ol.savings_account_id = a.account_id
-      WHERE ol.customer_id = ?`;
-    db.query(sql, [customerId], callback);
+      WHERE ol.customer_id = ?
+      ORDER BY ol.created_at DESC`;
+
+    db.query(sql, [customerId], (err, results) => {
+      if (err) {
+        console.error("Error fetching customer loans:", err);
+        return callback(err);
+      }
+      callback(null, results);
+    });
+  }
+
+  /**
+   * Static method to fetch a single loan by ID
+   */
+  static getLoanById(loanId, callback) {
+    const sql = `SELECT * FROM online_loans WHERE loan_id = ?`;
+    db.query(sql, [loanId], (err, results) => {
+      if (err) return callback(err);
+      callback(null, results[0]);
+    });
   }
 }
 
@@ -209,25 +283,9 @@ class InstallmentModel {
   }
 }
 
-/**
- * FixedDepositModel handles FD lifecycle and collateral status
- */
-class FixedDepositModel {
-  static getEligibleCollateral(customerId, callback) {
-    const sql = "SELECT * FROM fd_accounts WHERE customer_id = ? AND status = 'active'";
-    db.query(sql, [customerId], callback);
-  }
-
-  static getById(fdId, callback) {
-    const sql = "SELECT * FROM fd_accounts WHERE fd_id = ?";
-    db.query(sql, [fdId], (err, rows) => callback(err, rows[0]));
-  }
-}
-
 module.exports = {
   LoanTypeModel,
   OnlineLoanModel,
   PhysicalLoanModel,
   InstallmentModel,
-  FixedDepositModel
 };

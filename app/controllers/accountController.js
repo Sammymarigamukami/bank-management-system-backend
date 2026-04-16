@@ -92,14 +92,14 @@ exports.getActiveAccounts = async (req, res) => {
 };
 
 
-exports.transferFundByAccountID = (req, res) => {
-  const { receiverAccountId, amount, description } = req.body;
+exports.transferFundByAccountNumber = (req, res) => {
+  const { receiverAccountNumber, amount, description } = req.body;
   
   // 1. Authenticated User Guard
   // Extracting customer_id from the authenticated user object
   const senderCustomerId = req.user?.customer_id;
   
-  console.log(`[Transfer Request] Sender Customer ID: ${senderCustomerId} -> Receiver Account ID: ${receiverAccountId}`);
+  console.log(`[Transfer Request] Sender Customer ID: ${senderCustomerId} -> Receiver Account Number: ${receiverAccountNumber}`);
 
   if (!senderCustomerId) {
     return res.status(401).json({
@@ -109,10 +109,10 @@ exports.transferFundByAccountID = (req, res) => {
   }
 
   // 2. Input Validation
-  if (!receiverAccountId) {
+  if (!receiverAccountNumber) {
     return res.status(400).json({
       success: false,
-      message: "Recipient Account ID is required."
+      message: "Recipient Account Number is required."
     });
   }
 
@@ -125,22 +125,22 @@ exports.transferFundByAccountID = (req, res) => {
   }
 
   // 3. Model Execution
-  // Calling the specific method defined in the Account Model
-  AccountModel.transferFundsByAccountId(
+  // Calling the specific method for account number lookup in the Account Model
+  AccountModel.transferFundsByAccountNumber(
     senderCustomerId,
-    receiverAccountId,
+    receiverAccountNumber,
     numericAmount,
     description || "Internal Transfer",
     (err, result) => {
       
       // 4. Advanced Error Handling
       if (err) {
-        console.error(`[Transfer Error] Sender CID: ${senderCustomerId} -> Recipient AID: ${receiverAccountId}`, err.message);
+        console.error(`[Transfer Error] Sender CID: ${senderCustomerId} -> Recipient Acc: ${receiverAccountNumber}`, err.message);
 
         // Map specific business logic errors to 400 Bad Request
         const businessLogicErrors = [
           "Insufficient funds",
-          "Recipient account not found",
+          "Recipient account number not found",
           "Cannot transfer to yourself",
           "Sender account not found"
         ];
@@ -166,14 +166,13 @@ exports.transferFundByAccountID = (req, res) => {
         data: {
           referenceCode: result.referenceCode,
           amount: numericAmount,
-          recipientAccountId: receiverAccountId,
+          recipientAccountNumber: receiverAccountNumber,
           timestamp: new Date().toISOString()
         }
       });
     }
   );
 };
-
 
 exports.transferFundsByCustomerID = (req, res) => {
   // 1. Destructure the request body

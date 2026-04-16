@@ -18,7 +18,7 @@ module.exports = (app) => {
     router.get('/api/getBalance', jwtauth, getBalances.getActiveAccounts);
     router.get('/api/deposit/status/:checkoutRequestId', jwtauth, getStatus.getTransactionStatus);
     router.post('/api/accounts/transfer/customer', jwtauth, getBalances.transferFundsByCustomerID);
-    router.post('/api/accounts/transfer/account', jwtauth, getBalances.transferFundByAccountID);
+    router.post('/api/accounts/transfer/account', jwtauth, getBalances.transferFundByAccountNumber);
     router.post('/api/accounts/card/createCard', jwtauth, cardActions.issueNewCard);
     router.get('/api/accounts/getCardDetails/:card_id', jwtauth, cardActions.getCardDetails);
     router.post('/api/accounts/card/freeze', jwtauth, cardActions.freezeCard);

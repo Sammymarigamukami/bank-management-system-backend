@@ -341,12 +341,10 @@ exports.createOnlineCustomer = (req, res) => {
 
   onlineCustomers.create(onlineCustomer, (err, data) => {
     console.log("OnlineCustomer.create result: ", data);
+    console.log("OnlineCustomer.create error: ", err);
     if (err) {
-      if (err.kind === 'username_or_email_exists') {
+      if (err.kind === 'duplicate') {
         return res.status(409).json({ message: err.message });
-      }
-      if (err.kind ===  'username_does_not_exist') {
-        return res.status(400).json({ message: err.message });
       }
 
       if (
@@ -356,30 +354,31 @@ exports.createOnlineCustomer = (req, res) => {
       ) {
         return res.status(400).json({ message: err.message });
       }
-
-      if (err.message === "Customer does not exist") {
-        return res.status(404).json({ message: err.message });
-      }
-
       return res.status(500).json({ message: 'Internal server error'});
     } else {
-      const customerID = data.customerID;
+      const customerId = data.customerID;
       const userName = data.username;
       const email = data.email;
       const phone = data.phone;
       const firstName = data.firstName;
       const lastName = data.lastName;
-      const role = data.role;
-      const token = jwt.sign({ ...data, role: 'customer' }, JWT_SECRET, {
-        expiresIn: '8h',
+      const roles = data.roles;
+
+      const payload = {
+        customerId,
+        username: userName,
+        roles,
+      }
+      const token = jwt.sign(payload, JWT_SECRET, {
+        expiresIn: '8h'
       });
 
       res.send({
         auth: 'success',
-        role,
+        roles,
         expires: '8h',
         email,
-        customerID,
+        customerId,
         userName,
         phone,
         firstName,

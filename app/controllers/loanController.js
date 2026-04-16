@@ -6,71 +6,109 @@ const {
   FixedDepositModel 
 } = require("../models/loanModel");
 
-/**
- * 1. ONLINE LOAN APPLICATION (FD-COLLATERALIZED)
- * This interacts with the 'apply_for_online_loan' stored procedure.
- */
-exports.applyOnlineLoan = (req, res) => {
-  const customerId = req.user?.customer_id;
-  const { fdId, savingsId, loanTypeId, amount, duration } = req.body;
+// Import the configured cloudinary instance from your config file
+const { cloudinary } = require('../config/cloudinary'); 
+const fs = require('fs'); // Added to clean up temp files
 
-  // Level 1: Basic Input Validation
-  if (!fdId || !savingsId || !loanTypeId || !amount || !duration) {
-    return res.status(400).json({ 
-      success: false, 
-      message: "Required fields missing: fdId, savingsId, loanTypeId, amount, and duration must be provided." 
-    });
-  }
+exports.applyForOnlineLoan = async (req, res) => {
+    try {
+        // Extracting customerId from the authenticated user (jwtauth middleware)
+        const customerId = req.user?.customer_id;
 
-  if (amount <= 0 || duration <= 0) {
-    return res.status(400).json({ 
-      success: false, 
-      message: "Amount and duration must be positive values." 
-    });
-  }
+        if (!customerId) {
+            return res.status(401).json({ success: false, message: "Unauthorized: Customer ID not found." });
+        }
 
-  const loanData = {
-    customerId,
-    fdId,
-    savingsId,
-    loanTypeId,
-    amount: parseFloat(amount),
-    duration: parseInt(duration)
-  };
+        // 1. Destructure only the columns present in your NEW schema
+        const {
+            loanTypeId,
+            amount,
+            duration,
+            interestRate,
+            purpose,
+            employmentStatus,
+            monthlyIncome
+        } = req.body;
+        console.log("Received loan application data:", req.body);
 
-  // Level 2: Database Logic Execution
-  OnlineLoanModel.apply(loanData, (err, result) => {
-    if (err) {
-      console.error("[OnlineLoan Error]:", err.message);
-      
-      // Handling Procedure-specific status codes
-      if (err.message === 'INSUFFICIENT_COLLATERAL') {
-        return res.status(403).json({ 
-          success: false, 
-          message: "Application rejected: Loan amount must not exceed 80% of the active Fixed Deposit value." 
+        let idDocUrl = null;
+        let bankStmtUrl = null;
+
+        // 2. Handle File Uploads to Cloudinary
+        if (req.files) {
+            // Upload ID Document
+            if (req.files.idDocument) {
+                const idResult = await cloudinary.uploader.upload(req.files.idDocument[0].path, {
+                    folder: 'loan_documents/ids',
+                    resource_type: 'auto'
+                });
+                idDocUrl = idResult.secure_url;
+                console.log("ID Document uploaded to Cloudinary:", idDocUrl);
+                
+                // Remove local file after successful upload
+                fs.unlinkSync(req.files.idDocument[0].path);
+            }
+
+            // Upload Bank Statement
+            if (req.files.bankStatement) {
+                const stmtResult = await cloudinary.uploader.upload(req.files.bankStatement[0].path, {
+                    folder: 'loan_documents/statements',
+                    resource_type: 'auto'
+                });
+                bankStmtUrl = stmtResult.secure_url;
+                console.log("Bank Statement uploaded to Cloudinary:", bankStmtUrl);
+                // Remove local file after successful upload
+                fs.unlinkSync(req.files.bankStatement[0].path);
+            }
+        }
+
+        // 3. Prepare data for the Model (Aligned with Updated Model.apply)
+        const loanData = {
+            customerId,
+            loanTypeId,
+            amount,
+            duration,
+            interestRate,
+            purpose,
+            employmentStatus,
+            monthlyIncome,
+            idDocUrl,
+            bankStmtUrl
+        };
+
+        // 4. Call the Model
+        OnlineLoanModel.apply(loanData, (err, result) => {
+          console.log('Controller callback:', err, result);
+            if (err) {
+                return res.status(500).json({ 
+                    success: false, 
+                    message: "Failed to save loan application to database.",
+                    error: err.message 
+                });
+            }
+
+            return res.status(201).json({
+                success: true,
+                message: "Application submitted successfully!",
+                data: result,
+                documents: { idDocUrl, bankStmtUrl }
+            });
         });
-      }
-      
-      if (err.message === 'TRANSACTION_ERROR') {
-        return res.status(500).json({ 
-          success: false, 
-          message: "Internal ledger failure. The transaction has been rolled back." 
-        });
-      }
 
-      return res.status(500).json({ 
-        success: false, 
-        message: err.message || "An unexpected error occurred during loan disbursement." 
-      });
+    } catch (error) {
+        console.error("Controller Error:", error);
+        
+        // Safety cleanup: If upload fails or logic crashes, try to remove temp files if they still exist
+        if (req.files) {
+            if (req.files.idDocument && fs.existsSync(req.files.idDocument[0].path)) fs.unlinkSync(req.files.idDocument[0].path);
+            if (req.files.bankStatement && fs.existsSync(req.files.bankStatement[0].path)) fs.unlinkSync(req.files.bankStatement[0].path);
+        }
+
+        res.status(500).json({ 
+            success: false, 
+            message: "Internal server error during application process." 
+        });
     }
-    
-    // Level 3: Success response (Installments are automatically generated by DB trigger)
-    res.status(201).json({
-      success: true,
-      message: "Loan approved and funds disbursed successfully.",
-      data: result
-    });
-  });
 };
 
 /**
@@ -104,7 +142,7 @@ exports.requestPhysicalLoan = (req, res) => {
     res.status(201).json({ 
       success: true, 
       message: "Your application has been submitted to the branch. You will be notified once a credit officer reviews it.",
-      applicationId: result.insertId 
+      applicationId: result.insertId
     });
   });
 };

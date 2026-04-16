@@ -189,86 +189,89 @@ static getActiveAccounts(customerID, callback) {
 }
 
 
-  static transferFundsByAccountId(senderCustomerId, receiverAccountId, amount, description, callback) {
-    // 1. Get a dedicated connection from the pool
-    db.getConnection((err, connection) => {
-      if (err) return callback(err);
+static transferFundsByAccountNumber(senderCustomerId, receiverAccountNumber, amount, description, callback) {
+  // 1. Get a dedicated connection from the pool
+  db.getConnection((err, connection) => {
+    if (err) return callback(err);
 
-      // 2. Start Transaction
-      connection.beginTransaction((err) => {
-        if (err) {
+    // 2. Start Transaction
+    connection.beginTransaction((err) => {
+      if (err) {
+        connection.release();
+        return callback(err);
+      }
+
+      const rollback = (error) => {
+        connection.rollback(() => {
           connection.release();
-          return callback(err);
+          callback(error);
+        });
+      };
+
+      // 3. Check Sender Balance and Lock Row using customer_id
+      // We also fetch account_id (PK) and account_number for transaction logging
+      const checkSenderSql = "SELECT balance, account_number, account_id FROM accounts WHERE customer_id = ? FOR UPDATE";
+      connection.query(checkSenderSql, [senderCustomerId], (err, senderRows) => {
+        if (err) return rollback(err);
+        if (senderRows.length === 0) return rollback(new Error("Sender account not found"));
+
+        const sender = senderRows[0];
+        const senderPK = sender.account_id;
+
+        if (parseFloat(sender.balance) < parseFloat(amount)) {
+          return rollback(new Error("Insufficient funds"));
         }
 
-        const rollback = (error) => {
-          connection.rollback(() => {
-            connection.release();
-            callback(error);
-          });
-        };
-
-        // 3. Check Sender Balance and Lock Row using customer_id
-        const checkSenderSql = "SELECT balance, account_number, account_id FROM accounts WHERE customer_id = ? FOR UPDATE";
-        connection.query(checkSenderSql, [senderCustomerId], (err, senderRows) => {
+        // 4. Check Receiver Existence and Lock Row via account_number
+        const checkReceiverSql = "SELECT account_id, account_number FROM accounts WHERE account_number = ? FOR UPDATE";
+        connection.query(checkReceiverSql, [receiverAccountNumber], (err, receiverRows) => {
           if (err) return rollback(err);
-          if (senderRows.length === 0) return rollback(new Error("Sender account not found"));
+          if (receiverRows.length === 0) return rollback(new Error("Recipient account number not found"));
 
-          const sender = senderRows[0];
-          const senderPK = sender.account_id; // Primary Key for transactions table
+          const receiver = receiverRows[0];
+          const receiverPK = receiver.account_id;
 
-          if (parseFloat(sender.balance) < parseFloat(amount)) {
-            return rollback(new Error("Insufficient funds"));
+          if (receiverPK === senderPK) {
+            return rollback(new Error("Cannot transfer to yourself"));
           }
 
-          // 4. Check Receiver Existence and Lock Row via account_id
-          const checkReceiverSql = "SELECT account_id, account_number, customer_id FROM accounts WHERE account_id = ? FOR UPDATE";
-          connection.query(checkReceiverSql, [receiverAccountId], (err, receiverRows) => {
+          // 5. Deduct from Sender using their primary key (account_id)
+          const deductSql = "UPDATE accounts SET balance = balance - ? WHERE account_id = ?";
+          connection.query(deductSql, [amount, senderPK], (err) => {
             if (err) return rollback(err);
-            if (receiverRows.length === 0) return rollback(new Error("Recipient account not found"));
 
-            const receiver = receiverRows[0];
-            const receiverPK = receiver.account_id;
-            const receiverAccNum = receiver.account_number;
-
-            if (receiverPK === senderPK) {
-              return rollback(new Error("Cannot transfer to yourself"));
-            }
-
-            // 5. Deduct from Sender using customer_id
-            const deductSql = "UPDATE accounts SET balance = balance - ? WHERE customer_id = ?";
-            connection.query(deductSql, [amount, senderCustomerId], (err) => {
+            // 6. Add to Receiver using their primary key (account_id)
+            const addSql = "UPDATE accounts SET balance = balance + ? WHERE account_id = ?";
+            connection.query(addSql, [amount, receiverPK], (err) => {
               if (err) return rollback(err);
 
-              // 6. Add to Receiver using account_id
-              const addSql = "UPDATE accounts SET balance = balance + ? WHERE account_id = ?";
-              connection.query(addSql, [amount, receiverAccountId], (err) => {
+              const refCode = `TRF-${Math.random().toString(36).toUpperCase().slice(2, 10)}`;
+
+              // 7. Record Sender Transaction
+              const senderTxSql = `INSERT INTO transactions (account_id, amount, transaction_type, description, reference_code) 
+                                   VALUES (?, ?, 'withdrawal', ?, ?)`;
+              const senderDesc = `Transfer to Acc #${receiverAccountNumber}: ${description}`;
+              
+              connection.query(senderTxSql, [senderPK, -amount, senderDesc, refCode], (err) => {
                 if (err) return rollback(err);
 
-                const refCode = `TRF-${Math.random().toString(36).toUpperCase().slice(2, 10)}`;
+                // 8. Record Receiver Transaction
+                const receiverTxSql = `INSERT INTO transactions (account_id, amount, transaction_type, description, reference_code) 
+                                       VALUES (?, ?, 'deposit', ?, ?)`;
+                const receiverDesc = `Received from Acc #${sender.account_number}: ${description}`;
 
-                // 7. Record Sender Transaction (Using account_id PK)
-                const senderTxSql = `INSERT INTO transactions (account_id, amount, transaction_type, description, reference_code) 
-                                     VALUES (?, ?, 'withdrawal', ?, ?)`;
-                const senderDesc = `Transfer to Acc #${receiverAccNum}: ${description}`;
-                
-                connection.query(senderTxSql, [senderPK, -amount, senderDesc, refCode], (err) => {
+                connection.query(receiverTxSql, [receiverPK, amount, receiverDesc, refCode], (err) => {
                   if (err) return rollback(err);
 
-                  // 8. Record Receiver Transaction (Using account_id PK)
-                  const receiverTxSql = `INSERT INTO transactions (account_id, amount, transaction_type, description, reference_code) 
-                                         VALUES (?, ?, 'deposit', ?, ?)`;
-                  const receiverDesc = `Received from Acc #${sender.account_number}: ${description}`;
-
-                  connection.query(receiverTxSql, [receiverPK, amount, receiverDesc, refCode], (err) => {
+                  // 9. Final Commit
+                  connection.commit((err) => {
                     if (err) return rollback(err);
 
-                    // 9. Final Commit
-                    connection.commit((err) => {
-                      if (err) return rollback(err);
-
-                      connection.release();
-                      callback(null, { success: true, referenceCode: refCode });
+                    connection.release();
+                    callback(null, { 
+                      success: true, 
+                      referenceCode: refCode,
+                      receiverName: receiver.account_number // Optional: return info for UI
                     });
                   });
                 });
@@ -278,7 +281,8 @@ static getActiveAccounts(customerID, callback) {
         });
       });
     });
-  }
+  });
+}
 
   
   static transferFundsByCustomerId(senderCustomerId, receiverCustomerId, amount, description, callback) {

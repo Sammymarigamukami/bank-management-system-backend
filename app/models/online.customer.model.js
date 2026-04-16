@@ -112,7 +112,7 @@ OnlineCustomer.create = async (newOnlineCustomer, result) => {
                 firstName,
                 lastName,
                 accountNumber,
-                role: role.role_name
+                roles: [role.role_name]
               });
             });
           });
