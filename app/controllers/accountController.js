@@ -428,3 +428,60 @@ exports.updateStatus = (req, res) => {
     });
   });
 };
+
+exports.withdraw = (req, res) => {
+  const account_id = req.user?.account_id; // Assuming the authenticated user's customer_id is used as account_id
+  const { amount, description } = req.body;
+
+  // 1. Basic Request Validation
+  if (!account_id) {
+    return res.status(400).json({
+      success: false,
+      message: "Account ID is required"
+    });
+  }
+
+  const withdrawAmount = parseFloat(amount);
+  if (isNaN(withdrawAmount) || withdrawAmount <= 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Amount must be a positive number"
+    });
+  }
+
+  // 2. Interaction with Model
+  AccountModel.withdraw(
+    account_id,
+    withdrawAmount,
+    description,
+    (err, result) => {
+      if (err) {
+        // Map common error strings to HTTP status codes
+        let statusCode = 500;
+        const errMsg = err.message.toLowerCase();
+
+        if (errMsg.includes("not found")) statusCode = 404;
+        else if (errMsg.includes("insufficient")) statusCode = 400;
+        else if (errMsg.includes("denied") || errMsg.includes("status")) statusCode = 403;
+
+        return res.status(statusCode).json({
+          success: false,
+          message: err.message || "Internal server error during withdrawal"
+        });
+      }
+
+      // 3. Success Response
+      return res.status(200).json({
+        success: true,
+        message: "Withdrawal processed successfully",
+        data: {
+          reference_code: result.referenceCode,
+          new_balance: result.newBalance,
+          amount_withdrawn: withdrawAmount,
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+  );
+};
+

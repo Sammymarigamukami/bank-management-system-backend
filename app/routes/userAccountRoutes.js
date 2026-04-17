@@ -29,6 +29,7 @@ module.exports = (app) => {
     router.post('/api/accounts/paybill', jwtauth, PaybillController.PaybillController);
     router.get('/api/accounts/paybill/history', jwtauth, PaybillController.getPaymentHistory);
     router.get('/api/accounts/analysis/:customerId', analyticsController.getDashboardAnalytics);
+    router.post('/api/accounts/withdraw',jwtauth, getBalances.withdraw);
 
     app.use('/user', router);
 }

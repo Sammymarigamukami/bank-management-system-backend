@@ -284,6 +284,95 @@ static transferFundsByAccountNumber(senderCustomerId, receiverAccountNumber, amo
   });
 }
 
+
+  /**
+   * Internal Helper to record transactions within an existing connection
+   */
+  static _recordTransaction(connection, data, callback) {
+    const sql = `
+      INSERT INTO transactions (account_id, amount, transaction_type, description, reference_code) 
+      VALUES (?, ?, ?, ?, ?)
+    `;
+    const params = [
+      data.accountId,
+      data.amount,
+      data.type,
+      data.description,
+      data.referenceCode
+    ];
+    connection.query(sql, params, callback);
+  }
+
+  /**
+   * Withdraw logic with integrated record helper
+   */
+  static withdraw(accountId, amount, description, callback) {
+    db.getConnection((err, connection) => {
+      if (err) return callback(err);
+
+      connection.beginTransaction((err) => {
+        if (err) {
+          connection.release();
+          return callback(err);
+        }
+
+        const rollback = (error) => {
+          connection.rollback(() => {
+            connection.release();
+            callback(error);
+          });
+        };
+
+        // 1. Fetch current state and lock row
+        const checkSql = "SELECT balance, status FROM accounts WHERE account_id = ? FOR UPDATE";
+        connection.query(checkSql, [accountId], (err, rows) => {
+          if (err) return rollback(err);
+          if (rows.length === 0) return rollback(new Error("Account not found"));
+
+          const account = rows[0];
+
+          // 2. Validations
+          if (account.status !== 'active') {
+            return rollback(new Error(`Withdrawal denied: Account is ${account.status}`));
+          }
+          if (parseFloat(account.balance) < parseFloat(amount)) {
+            return rollback(new Error("Insufficient funds"));
+          }
+
+          // 3. Update Balance
+          const updateSql = "UPDATE accounts SET balance = balance - ? WHERE account_id = ?";
+          connection.query(updateSql, [amount, accountId], (err) => {
+            if (err) return rollback(err);
+
+            // 4. Record Transaction using the internal helper
+            const refCode = `WDL-${Math.random().toString(36).toUpperCase().slice(2, 10)}`;
+            
+            this._recordTransaction(connection, {
+              accountId: accountId,
+              amount: -amount, // Stored as negative for withdrawals
+              type: 'withdrawal',
+              description: description || 'Cash Withdrawal',
+              referenceCode: refCode
+            }, (txErr) => {
+              if (txErr) return rollback(txErr);
+
+              // 5. Finalize
+              connection.commit((commitErr) => {
+                if (commitErr) return rollback(commitErr);
+                
+                connection.release();
+                callback(null, {
+                  success: true,
+                  referenceCode: refCode,
+                  newBalance: parseFloat(account.balance) - parseFloat(amount)
+                });
+              });
+            });
+          });
+        });
+      });
+    });
+  }
   
   static transferFundsByCustomerId(senderCustomerId, receiverCustomerId, amount, description, callback) {
     // 1. Get a dedicated connection from the pool
@@ -377,6 +466,8 @@ static transferFundsByAccountNumber(senderCustomerId, receiverAccountNumber, amo
         });
       });
     });
+
+    
   }
 }
 
