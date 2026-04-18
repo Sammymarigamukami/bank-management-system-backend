@@ -17,6 +17,9 @@ module.exports = (app) => {
     router.patch('/api/accounts/close/savings/:accountId', jwtauth, userAccount.closeSavingsAccount);
     router.patch('/api/accounts/close/business/:accountId', jwtauth, userAccount.closeBusinessAccount);
     router.get('/api/admin/reports/accounts', jwtauth, getAccountsReport.downloadAccountList);
+    router.patch('/api/accounts/close/:customerId', jwtauth, getFullProfile.closeAccount);
+    router.patch('/api/accounts/deactivate/:customerId', jwtauth, getFullProfile.deactivate);
+    router.patch('/api/accounts/activate/:customerId', jwtauth, getFullProfile.activate);
 
     app.use('/admin', router);
 }

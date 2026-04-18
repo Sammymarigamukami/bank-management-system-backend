@@ -217,6 +217,44 @@ class OnlineLoanModel {
     });
   }
 
+    /**
+   * Retrieves all loans for administrative review.
+   * Includes customer names and loan type details.
+   */
+  static getAllLoans(callback) {
+    const sql = `
+      SELECT 
+        ol.loan_id,
+        ol.customer_id,
+        CONCAT(c.first_name, ' ', c.last_name) AS customer_name,
+        c.email AS customer_email,
+        lt.type_name AS loan_type,
+        ol.amount,
+        ol.duration_months,
+        ol.interest_rate,
+        ol.purpose,
+        ol.status,
+        ol.employment_status,
+        ol.monthly_income,
+        ol.id_doc_url,
+        ol.bank_stmt_url,
+        ol.created_at,
+        ol.updated_at
+      FROM online_loans ol
+      JOIN customers c ON ol.customer_id = c.customer_id
+      JOIN loan_types lt ON ol.loan_type_id = lt.loan_type_id
+      ORDER BY ol.created_at DESC
+    `;
+
+    db.query(sql, (err, results) => {
+      if (err) {
+        console.error("Error fetching all loans for admin:", err);
+        return callback(err);
+      }
+      callback(null, results);
+    });
+  }
+
   /**
    * Static method to fetch a single loan by ID
    */

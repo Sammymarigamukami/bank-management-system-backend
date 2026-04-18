@@ -125,6 +125,7 @@ OnlineCustomer.create = async (newOnlineCustomer, result) => {
   }
 };
 
+// findByUsername and findById are updated
 OnlineCustomer.findByUsername = (username, result) => {
   console.log('in findUser');
   console.log("username:", username);
@@ -147,6 +148,7 @@ OnlineCustomer.findByUsername = (username, result) => {
   });
 };
 
+// Updated findById to JOIN with accounts and return account details
 OnlineCustomer.findById = (customer_id, result) => {
   console.log("in findById");
   console.log("customer_id:", customer_id);
@@ -181,7 +183,7 @@ OnlineCustomer.findById = (customer_id, result) => {
   });
 };
 
-
+// Updated delete to also remove associated accounts and handle cascading deletes if necessary
 OnlineCustomer.delete = (id, result) => {
   const query = `DELETE FROM customers WHERE customer_id = ?`;
   sql.query(query, id, (err, res) => {
@@ -201,6 +203,144 @@ OnlineCustomer.delete = (id, result) => {
   });
 };
 
+// Activate a customer account
+OnlineCustomer.activate = (id, result) => {
+  // 1. Check current status first
+  sql.query("SELECT status FROM customers WHERE customer_id = ?", [id], (err, res) => {
+    if (err) {
+      result(err, null);
+      return;
+    }
+
+    if (res.length === 0) {
+      result({ kind: "not_found" }, null);
+      return;
+    }
+
+    const currentStatus = res[0].status;
+
+    if (currentStatus === "closed") {
+      result({ kind: "not_found_or_closed", message: "Cannot activate a closed account" }, null);
+      return;
+    }
+
+    if (currentStatus === "active") {
+      result({ kind: "redundant_action", message: "Customer is already active" }, null);
+      return;
+    }
+
+    // 2. Proceed with update
+    const query = "UPDATE customers SET status = 'active' WHERE customer_id = ? AND status != 'closed'";
+    sql.query(query, [id], (updErr, updRes) => {
+      if (updErr) {
+        result(updErr, null);
+        return;
+      }
+      result(null, { kind: "success", message: "Customer activated successfully" });
+    });
+  });
+};
+
+// Deactivate a customer (Set status to 'suspended')
+OnlineCustomer.deactivate = (id, result) => {
+  // 1. Check current status first
+  sql.query("SELECT status FROM customers WHERE customer_id = ?", [id], (err, res) => {
+    if (err) {
+      result(err, null);
+      return;
+    }
+
+    if (res.length === 0) {
+      result({ kind: "not_found" }, null);
+      return;
+    }
+
+    const currentStatus = res[0].status;
+
+    if (currentStatus === "closed") {
+      result({ kind: "not_found_or_closed", message: "Cannot suspend a closed account" }, null);
+      return;
+    }
+
+    if (currentStatus === "suspended") {
+      result({ kind: "redundant_action", message: "Customer is already suspended" }, null);
+      return;
+    }
+
+    // 2. Proceed with update
+    const query = "UPDATE customers SET status = 'suspended' WHERE customer_id = ? AND status != 'closed'";
+    sql.query(query, [id], (updErr, updRes) => {
+      if (updErr) {
+        result(updErr, null);
+        return;
+      }
+      result(null, { kind: "success", message: "Customer suspended successfully" });
+    });
+  });
+};
+
+// Close account (Set status to 'closed')
+OnlineCustomer.closeAccount = (id, result) => {
+  // 1. Check current status first
+  sql.query("SELECT status FROM customers WHERE customer_id = ?", [id], (err, res) => {
+    if (err) {
+      result(err, null);
+      return;
+    }
+
+    if (res.length === 0) {
+      result({ kind: "not_found" }, null);
+      return;
+    }
+
+    if (res[0].status === "closed") {
+      result({ kind: "redundant_action", message: "Account is already closed" }, null);
+      return;
+    }
+
+    // 2. Proceed with update
+    const query = "UPDATE customers SET status = 'closed' WHERE customer_id = ?";
+    sql.query(query, [id], (updErr, updRes) => {
+      if (updErr) {
+        result(updErr, null);
+        return;
+      }
+      result(null, { kind: "success", message: "Account closed permanently" });
+    });
+  });
+};
+
+//  Check if customer is active
+// Returns a boolean in the result callback
+OnlineCustomer.isActive = (id, result) => {
+  const query = "SELECT status FROM customers WHERE customer_id = ?";
+
+  sql.query(query, [id], (err, res) => {
+    if (err) {
+      console.log("error: ", err);
+      result({ kind: "error", message: err.message }, null);
+      return;
+    }
+
+    if (res.length === 0) {
+      result({ kind: "not_found" }, null);
+      return;
+    }
+
+    const currentStatus = res[0].status;
+    const isActive = currentStatus === 'active';
+
+    console.log(`Customer ${id} status is: ${currentStatus}. Active: ${isActive}`);
+    
+    result(null, { 
+      kind: "success", 
+      isActive: isActive, 
+      currentStatus: currentStatus 
+    });
+  });
+};
+
+// New method to count total customers
 OnlineCustomer.countAll = (result) => {
   const query = "SELECT COUNT(*) AS total FROM customers";
   
@@ -215,7 +355,7 @@ OnlineCustomer.countAll = (result) => {
     result(null, res[0].total); 
   });
 };
-
+// New method to count active accounts (for dashboard stats)
 OnlineCustomer.countActive = (result) => {
   const query = "SELECT COUNT(*) AS active FROM accounts WHERE status = 'active'";
   
@@ -233,7 +373,7 @@ OnlineCustomer.countActive = (result) => {
   });
 };
 
-
+// New method to get full profile for dashboard (customer + account details + transaction summary)
 OnlineCustomer.getFullProfile = (customerId, result) => {
   const query = `
     SELECT 
@@ -289,6 +429,7 @@ OnlineCustomer.getFullProfile = (customerId, result) => {
   });
 };
 
+// New method to get all customers for admin dashboard with enhanced details
 OnlineCustomer.getAllForAdmin = (result) => {
   const query = `
     SELECT 

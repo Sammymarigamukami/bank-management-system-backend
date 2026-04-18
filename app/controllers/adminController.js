@@ -1,6 +1,7 @@
 const OnlineCustomer = require("../models/online.customer.model.js");
 const Transaction = require("../models/transactionModel.js");
 const FinancialStats = require("../models/financialStatsModel.js");
+const Audit = require("../models/auditLogModel.js");
 
 
 exports.getCustomerFullProfile = (req, res) => {
@@ -78,5 +79,97 @@ exports.getAccountReport = (req, res) => {
         data: data
       });
     }
+  });
+};
+
+/**
+ * Helper function to handle audit logging to keep controllers clean
+ */
+const createAuditTrail = (req, action, entityId) => {
+  console.log(`Creating audit log for action: ${action} on entity ID: ${entityId} by employee ID: ${req.user?.employee_id}`);
+  if (!req.user.employee_id) {
+    console.warn("No authenticated user found for audit logging.");
+    return;
+  }
+  const auditEntry = {
+    employee_id: req.user?.employee_id,
+    action: action,
+    entity: "online_customers",
+    entity_id: entityId,
+    ip_address: req.ip || req.connection.remoteAddress
+  };
+
+  Audit.log(auditEntry, (err) => {
+    if (err) {
+      console.error(`Failed to log audit for ${action} on customer ${entityId}`);
+    }
+  });
+};
+
+// Activate a customer account
+exports.activate = (req, res) => {
+  const customerId = req.params.customerId;
+
+  OnlineCustomer.activate(customerId, (err, data) => {
+    if (err) {
+      if (err.kind === "not_found_or_closed") {
+        return res.status(404).send({
+          message: `Cannot activate. Customer with id ${customerId} was not found or is permanently closed.`
+        });
+      }
+      return res.status(500).send({
+        message: err.message || "Error activating customer with id " + customerId
+      });
+    }
+
+    // Log the successful activation
+    createAuditTrail(req, "ACTIVATE_ACCOUNT", customerId);
+    
+    res.status(200).send(data);
+  });
+};
+
+// Suspend a customer account
+exports.deactivate = (req, res) => {
+  const customerId = req.params.customerId;
+  OnlineCustomer.deactivate(customerId, (err, data) => {
+    if (err) {
+      if (err.kind === "not_found_or_closed") {
+        return res.status(404).send({
+          message: `Cannot deactivate. Customer with id ${customerId} was not found or is permanently closed.`
+        });
+      }
+      return res.status(500).send({
+        message: err.message || "Error deactivating customer with id " + customerId
+      });
+    }
+
+    // Log the successful deactivation
+    createAuditTrail(req, "DEACTIVATE_ACCOUNT", customerId);
+
+    res.status(200).send(data);
+  });
+};
+
+// Permanently close a customer account
+exports.closeAccount = (req, res) => {
+  const customerId = req.params.customerId;
+
+  OnlineCustomer.closeAccount(customerId, (err, data) => {
+    if (err) {
+      if (err.kind === "not_found") {
+        return res.status(404).send({
+          message: `Not found Customer with id ${customerId}.`
+        });
+      }
+      return res.status(500).send({
+        message: err.message || "Could not close account for Customer with id " + customerId
+      });
+    }
+
+    // Log the successful closure
+    createAuditTrail(req, "CLOSE_ACCOUNT_PERMANENT", customerId);
+
+    res.status(200).send(data);
   });
 };

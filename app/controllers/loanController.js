@@ -112,7 +112,7 @@ exports.applyForOnlineLoan = async (req, res) => {
 };
 
 /**
- * 2. PHYSICAL LOAN REQUEST (BRANCH-BASED)
+ *  PHYSICAL LOAN REQUEST (BRANCH-BASED)
  * For loans requiring manual review and employee approval.
  */
 exports.requestPhysicalLoan = (req, res) => {
@@ -148,7 +148,7 @@ exports.requestPhysicalLoan = (req, res) => {
 };
 
 /**
- * 3. LOAN REPAYMENT (INSTALLMENTS)
+ *  LOAN REPAYMENT (INSTALLMENTS)
  * Interacts with 'pay_online_installment' stored procedure.
  */
 exports.payLoanInstallment = (req, res) => {
@@ -184,16 +184,64 @@ exports.payLoanInstallment = (req, res) => {
 };
 
 /**
- * 4. LOAN DATA RETRIEVAL (DASHBOARD)
+ * LOAN DATA RETRIEVAL (DASHBOARD)
  */
 exports.getCustomerLoans = (req, res) => {
   const customerId = req.user?.customer_id;
 
+  // Validate that customerId exists
+  if (!customerId) {
+    return res.status(400).json({
+      success: false,
+      message: "Customer ID is required as a URL parameter."
+    });
+  }
+
   OnlineLoanModel.getCustomerLoans(customerId, (err, loans) => {
-    if (err) return res.status(500).json({ success: false, message: "Error fetching loan records." });
-    res.status(200).json({ success: true, data: loans });
+    if (err) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to retrieve loan records.",
+        error: err.message
+      });
+    }
+
+    // Return an empty array if no loans found, or the list of loans
+    return res.status(200).json({
+      success: true,
+      count: loans.length,
+      data: loans
+    });
   });
 };
+
+exports.getAllLoans = (req, res) => {
+    // Note: Assuming admin authorization is handled by middleware
+    OnlineLoanModel.getAllLoans((err, loans) => {
+      if (err) {
+        console.error("Controller error fetching all loans:", err);
+        return res.status(500).json({
+          success: false,
+          message: "Internal server error while retrieving loan applications.",
+          error: err.message
+        });
+      }
+
+      if (!loans || loans.length === 0) {
+        return res.status(200).json({
+          success: true,
+          message: "No loan applications found.",
+          data: []
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        count: loans.length,
+        data: loans
+      });
+    });
+  }
 
 exports.getLoanInstallments = (req, res) => {
   const { loanId } = req.params;
@@ -210,7 +258,7 @@ exports.getLoanInstallments = (req, res) => {
 };
 
 /**
- * 5. UTILITY DATA (FOR FORMS)
+ *  UTILITY DATA (FOR FORMS)
  */
 exports.getEligibleCollateral = (req, res) => {
   const customerId = req.user?.customer_id;

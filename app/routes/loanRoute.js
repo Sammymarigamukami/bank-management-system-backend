@@ -21,7 +21,6 @@ module.exports = (app) => {
       ])
     ], 
     onlineLoans.applyForOnlineLoan);
-  router.get('/api/loans/my', [jwtauth], onlineLoans.getCustomerLoans);
   router.get('/api/loans/payment', [jwtauth], onlineLoans.payLoanInstallment);
   router.get('/api/loans/installments/:loanId', [jwtauth], onlineLoans.getLoanInstallments);
   router.get('/api/loans/eligible-collateral', [jwtauth], onlineLoans.getEligibleCollateral);
@@ -30,6 +29,8 @@ module.exports = (app) => {
   router.put('/api/loans/update/:id', [jwtauth], createLoanTypes.updateLoanType);
   router.delete('/api/loans/delete/:id', [jwtauth], createLoanTypes.deleteProduct);
   router.patch('/api/loans/toggle-status/:id', [jwtauth], createLoanTypes.setOnlineStatus);
+  router.get('/api/customer/loans', [jwtauth], onlineLoans.getCustomerLoans);
+  router.get('/api/loans/all', [jwtauth], onlineLoans.getAllLoans);
 
   app.use('/Loans', router);
 };

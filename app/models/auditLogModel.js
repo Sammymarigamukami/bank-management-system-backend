@@ -4,6 +4,7 @@ const db = require('./db.js');
 const Audit = function() {};
 
 Audit.log = (entry, callback) => {
+  console.log("Logging audit entry:", entry);
     const query = `
       INSERT INTO audit_logs 
       (employee_id, action, entity, entity_id, ip_address)

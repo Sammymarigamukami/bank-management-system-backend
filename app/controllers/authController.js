@@ -26,7 +26,7 @@ exports.customerLogin = (req, res) => {
     });
   }
 
-  //  Find customer
+  // Find customer
   onlineCustomers.findByUsername(userName, (err, data) => {
     console.log("CustomerAuthModel.findByUsername result: ", data);
     console.log("CustomerAuthModel.findByUsername error: ", err);
@@ -39,7 +39,7 @@ exports.customerLogin = (req, res) => {
 
     const hash = data.password_hash;
 
-    // 2 Compare password
+    // Compare password
     bcrypt.compare(password, hash, (err, match) => {
       if (err) {
         return res.status(500).json({
@@ -58,7 +58,31 @@ exports.customerLogin = (req, res) => {
 
       const customerId = data.customer_id;
 
-      // 3 Get roles from DB
+      onlineCustomers.isActive(customerId, (err, statusData) => {
+        if (err) {
+          return res.status(500).json({
+            auth: 'fail',
+            message: 'Error checking account status',
+          });
+        }
+
+        if (!statusData.isActive) {
+          let customMessage = 'Your account is not active.';
+          
+          if (statusData.currentStatus === 'suspended') {
+            customMessage = 'Your account has been suspended. Please contact support.';
+          } else if (statusData.currentStatus === 'closed') {
+            customMessage = 'This account has been permanently closed.';
+          }
+
+          return res.status(403).json({
+            auth: 'fail',
+            status: statusData.currentStatus,
+            message: customMessage,
+          });
+        }
+
+      //  Get roles from DB
       CustomerRoleModel.getRoles(customerId, (err, roles) => {
         console.log("CustomerRoleModel.getRoles result: ", roles);
         if (err) {
@@ -70,7 +94,7 @@ exports.customerLogin = (req, res) => {
 
         const roleNames = roles.map(r => r.role_name);
 
-        // 4 Build token payload (SAFE)
+        //  Build token payload (SAFE)
         const payload = {
           customerId,
           username: userName,
@@ -81,7 +105,7 @@ exports.customerLogin = (req, res) => {
           expiresIn: '8h'
         });
 
-        // 5️⃣ Response
+        //  Response
         return res.json({
           auth: 'success',
           token,
@@ -93,6 +117,7 @@ exports.customerLogin = (req, res) => {
         });
       });
     });
+  });
   });
 };
 
