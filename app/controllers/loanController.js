@@ -6,6 +6,8 @@ const {
   FixedDepositModel 
 } = require("../models/loanModel");
 
+const NotificationModel = require("../models/notificationModel");
+
 // Import the configured cloudinary instance from your config file
 const { cloudinary } = require('../config/cloudinary'); 
 const fs = require('fs'); // Added to clean up temp files
@@ -86,13 +88,17 @@ exports.applyForOnlineLoan = async (req, res) => {
                     error: err.message 
                 });
             }
-
+        NotificationModel.create(customerId, `Loan Application for ${amount} has been submitted and is pending for review`, (err) => {
+          if (err) {
+            console.error("Error creating notification for loan application:", err);
+          }
             return res.status(201).json({
                 success: true,
                 message: "Application submitted successfully!",
                 data: result,
                 documents: { idDocUrl, bankStmtUrl }
             });
+          });
         });
 
     } catch (error) {
@@ -216,32 +222,84 @@ exports.getCustomerLoans = (req, res) => {
 };
 
 exports.getAllLoans = (req, res) => {
-    // Note: Assuming admin authorization is handled by middleware
-    OnlineLoanModel.getAllLoans((err, loans) => {
-      if (err) {
-        console.error("Controller error fetching all loans:", err);
-        return res.status(500).json({
-          success: false,
-          message: "Internal server error while retrieving loan applications.",
-          error: err.message
-        });
-      }
+  // Extract filters from query parameters
+  // search: matches Loan ID or Customer Name
+  // status: matches 'pending', 'approved', 'rejected', etc.
+  const filters = {
+    search: req.query.search || '',
+    status: req.query.status || 'all'
+  };
 
-      if (!loans || loans.length === 0) {
-        return res.status(200).json({
-          success: true,
-          message: "No loan applications found.",
-          data: []
-        });
-      }
+  // Pass filters object to the improved model method
+  OnlineLoanModel.getAllLoans(filters, (err, loans) => {
+    if (err) {
+      console.error("Controller error fetching filtered loans:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Internal server error while retrieving loan applications.",
+        error: err.message
+      });
+    }
 
+    // Check if results exist
+    if (!loans || loans.length === 0) {
       return res.status(200).json({
         success: true,
-        count: loans.length,
-        data: loans
+        message: filters.search || filters.status !== 'all' 
+          ? "No loan applications found matching your criteria." 
+          : "No loan applications found.",
+        count: 0,
+        data: []
       });
+    }
+
+    // Return the results with the count
+    return res.status(200).json({
+      success: true,
+      message: "Loan applications retrieved successfully.",
+      count: loans.length,
+      filters_applied: filters,
+      data: loans
     });
-  }
+  });
+};
+
+exports.getLoanDetails = (req, res) => {
+    const loanId = req.params.id;
+
+    // Validate request
+    if (!loanId) {
+        return res.status(400).send({
+            message: "Loan ID is required."
+        });
+    }
+
+    // Call the model method using the callback pattern
+    OnlineLoanModel.getLoanById(loanId, (err, data) => {
+        if (err) {
+            // Handle Case: Not Found
+            if (err.kind === "not_found") {
+                return res.status(404).send({
+                    status: "error",
+                    message: `Loan with ID ${loanId} was not found.`
+                });
+            } 
+            
+            // Handle Case: Database/Server Error
+            return res.status(500).send({
+                status: "error",
+                message: err.message || "An internal error occurred while retrieving loan details."
+            });
+        }
+
+        // Handle Case: Success
+        res.status(200).send({
+            status: "success",
+            data: data
+        });
+    });
+};
+
 
 exports.getLoanInstallments = (req, res) => {
   const { loanId } = req.params;

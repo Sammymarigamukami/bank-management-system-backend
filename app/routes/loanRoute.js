@@ -31,6 +31,7 @@ module.exports = (app) => {
   router.patch('/api/loans/toggle-status/:id', [jwtauth], createLoanTypes.setOnlineStatus);
   router.get('/api/customer/loans', [jwtauth], onlineLoans.getCustomerLoans);
   router.get('/api/loans/all', [jwtauth], onlineLoans.getAllLoans);
+  router.get('/api/loans/:id', onlineLoans.getLoanDetails);
 
   app.use('/Loans', router);
 };

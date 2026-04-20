@@ -217,54 +217,227 @@ class OnlineLoanModel {
     });
   }
 
+
     /**
    * Retrieves all loans for administrative review.
    * Includes customer names and loan type details.
    */
-  static getAllLoans(callback) {
-    const sql = `
-      SELECT 
-        ol.loan_id,
-        ol.customer_id,
-        CONCAT(c.first_name, ' ', c.last_name) AS customer_name,
-        c.email AS customer_email,
-        lt.type_name AS loan_type,
-        ol.amount,
-        ol.duration_months,
-        ol.interest_rate,
-        ol.purpose,
-        ol.status,
-        ol.employment_status,
-        ol.monthly_income,
-        ol.id_doc_url,
-        ol.bank_stmt_url,
-        ol.created_at,
-        ol.updated_at
-      FROM online_loans ol
-      JOIN customers c ON ol.customer_id = c.customer_id
-      JOIN loan_types lt ON ol.loan_type_id = lt.loan_type_id
-      ORDER BY ol.created_at DESC
-    `;
+static getAllLoans(filters, callback) {
+  // Destructure filters, providing defaults if not present
+  const { search = '', status = 'all' } = filters || {};
 
-    db.query(sql, (err, results) => {
+  let sql = `
+    SELECT 
+      ol.loan_id,
+      ol.customer_id,
+      CONCAT(c.first_name, ' ', c.last_name) AS customer_name,
+      c.email AS customer_email,
+      lt.type_name AS loan_type,
+      ol.amount,
+      ol.duration_months,
+      ol.interest_rate,
+      ol.purpose,
+      ol.status,
+      ol.employment_status,
+      ol.monthly_income,
+      ol.id_doc_url,
+      ol.bank_stmt_url,
+      ol.created_at,
+      ol.updated_at
+    FROM online_loans ol
+    JOIN customers c ON ol.customer_id = c.customer_id
+    JOIN loan_types lt ON ol.loan_type_id = lt.loan_type_id
+    WHERE 1=1
+  `;
+
+  const params = [];
+
+  // 1. Status Filter
+  if (status && status !== 'all') {
+    sql += ` AND ol.status = ?`;
+    params.push(status);
+  }
+
+  // 2. Search Filter (Loan ID or Customer Name)
+  if (search) {
+    sql += ` AND (
+      ol.loan_id LIKE ? 
+      OR c.first_name LIKE ? 
+      OR c.last_name LIKE ? 
+      OR CONCAT(c.first_name, ' ', c.last_name) LIKE ?
+    )`;
+    const searchWildcard = `%${search}%`;
+    params.push(searchWildcard); // for loan_id
+    params.push(searchWildcard); // for first_name
+    params.push(searchWildcard); // for last_name
+    params.push(searchWildcard); // for full name string
+  }
+
+  sql += ` ORDER BY ol.created_at DESC`;
+
+  db.query(sql, params, (err, results) => {
+    if (err) {
+      console.error("Error fetching filtered loans for admin:", err);
+      return callback(err);
+    }
+    callback(null, results);
+  });
+}
+
+  /**
+   * Update the status of a loan application.
+   * Logic: Used by Admins to move status from 'pending' to 'approved' or 'rejected'.
+   * @param {number} loanId 
+   * @param {string} newStatus - 'approved', 'rejected', 'disbursed', etc.
+   * @param {function} callback 
+   */
+  static updateStatus(loanId, newStatus, callback) {
+    const validStatuses = ['pending', 'approved', 'rejected', 'disbursed', 'active', 'closed', 'defaulted'];
+    
+    if (!validStatuses.includes(newStatus)) {
+      return callback(new Error("Invalid status update"));
+    }
+
+    const sql = `
+      UPDATE online_loans 
+      SET status = ? 
+      WHERE loan_id = ?
+    `;
+    
+    db.query(sql, [newStatus, loanId], (err, result) => {
       if (err) {
-        console.error("Error fetching all loans for admin:", err);
+        console.error("Error updating loan status:", err);
         return callback(err);
       }
-      callback(null, results);
+      callback(null, result);
     });
   }
 
+  
   /**
    * Static method to fetch a single loan by ID
    */
-  static getLoanById(loanId, callback) {
-    const sql = `SELECT * FROM online_loans WHERE loan_id = ?`;
-    db.query(sql, [loanId], (err, results) => {
-      if (err) return callback(err);
-      callback(null, results[0]);
+  static getLoanById = (loanId, result) => {
+    console.log("Fetching loan details for loan ID:", loanId);
+    // 1. Get Loan and Customer Base Info
+    const loanQuery = `
+        SELECT 
+          ol.loan_id,
+          ol.customer_id,
+          CONCAT(c.first_name, ' ', c.last_name) AS customer_name,
+          c.email AS customer_email,
+          lt.type_name AS loan_type,
+          ol.amount,
+          ol.duration_months,
+          ol.interest_rate,
+          ol.purpose,
+          ol.status,
+          ol.employment_status,
+          ol.monthly_income,
+          ol.id_doc_url,
+          ol.bank_stmt_url,
+          ol.created_at,
+          ol.updated_at
+        FROM online_loans ol
+        JOIN customers c ON ol.customer_id = c.customer_id
+        JOIN loan_types lt ON ol.loan_type_id = lt.loan_type_id
+        WHERE ol.loan_id = ?`;
+
+    db.query(loanQuery, [loanId], (err, loanRows) => {
+        if (err) {
+            console.log("error: ", err);
+            result(err, null);
+            return;
+        }
+
+        if (loanRows.length === 0) {
+            result({ kind: "not_found" }, null);
+            return;
+        }
+
+        const loanData = loanRows[0];
+        const customerId = loanData.customer_id;
+
+        // 2. Get All Customer Accounts
+        db.query("SELECT * FROM accounts WHERE customer_id = ?", [customerId], (err, accounts) => {
+            if (err) {
+                console.log("error: ", err);
+                result(err, null);
+                return;
+            }
+
+            // 3. Get All Customer Cards (linked via account_id)
+            const cardQuery = `
+                SELECT c.* FROM cards c
+                JOIN accounts a ON c.account_id = a.account_id
+                WHERE a.customer_id = ?`;
+
+            db.query(cardQuery, [customerId], (err, cards) => {
+                if (err) {
+                    console.log("error: ", err);
+                    result(err, null);
+                    return; 
+                }
+            const fdQuery = `SELECT 
+                fd_id, 
+                account_id, 
+                principal_amount, 
+                interest_rate, 
+                start_date, 
+                maturity_date, 
+                status
+            FROM fd_accounts
+            WHERE customer_id = ?`
+
+            db.query(fdQuery, [customerId], (err, fdAccounts) => {
+                if (err) {
+                    console.log("error: ", err);
+                    result(err, null);
+                    return; 
+                }
+
+                // Logic to filter specific account types for the "activated" requirement
+                const currentAcc = accounts.find(a => a.account_type === 'current' && a.status === 'active');
+                const businessAcc = accounts.find(a => a.account_type === 'business' && a.status === 'active');
+                const savingsAcc = accounts.find(a => a.account_type === 'savings' && a.status === 'active');
+
+                // 4. Construct the Final Object
+                const finalModel = {
+                    loanDetails: {
+                        loanId: loanData.loan_id,
+                        loanType: loanData.loan_type,
+                        amount: loanData.amount,
+                        interestRate: loanData.interest_rate,
+                        duration: loanData.duration,
+                        createdAt: loanData.created_at,
+                        status: loanData.status,
+                        purpose: loanData.purpose
+                    },
+                    customer: {
+                        name: loanData.customer_name,
+                        email: loanData.customer_email,
+                        employmentStatus: loanData.employment_status,
+                        monthlyIncome: loanData.monthly_income
+                    },
+                    documents: {
+                        idCard: loanData.id_doc_url,
+                        bankStatement: loanData.bank_stmt_url
+                    },
+                    accounts: {
+                        current: currentAcc || null,
+                        business: businessAcc || null,
+                        savings: savingsAcc || null,
+                        fixedDeposits: fdAccounts || null
+                    },
+                    cards: cards
+                };
+
+                result(null, finalModel);
+            });
+          });
+        });
     });
-  }
+};
 }
 
 /**
